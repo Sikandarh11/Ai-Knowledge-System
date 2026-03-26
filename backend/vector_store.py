@@ -40,26 +40,16 @@ class VectorStore:
 
     # ── Read ───────────────────────────────────────────────────────────────────
 
-    def query(
-        self,
-        query_embedding: list[float],
-        n_results: int = 5,
-    ) -> list[dict]:
-        """
-        Return the top-n closest chunks to the query embedding.
+    def query(self, query_embedding, workspace_id: int | None = None, n_results: int = 5):
+        where_filter = None
 
-        Returns a list of dicts, each containing:
-            {
-                "id":          str,
-                "text":        str,
-                "distance":    float,   # lower = more similar (cosine)
-                "document_id": int,
-                "workspace_id": int,
-            }
-        """
+        if workspace_id is not None:
+            where_filter = {"workspace_id": workspace_id}
+
         results = self._collection.query(
             query_embeddings=[query_embedding],
             n_results=n_results,
+            where=where_filter,
             include=["documents", "metadatas", "distances"],
         )
 

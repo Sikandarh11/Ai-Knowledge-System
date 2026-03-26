@@ -1,128 +1,416 @@
-# Workspace API
+# 🧠 AI Knowledge System (Backend)
 
-A lightweight FastAPI backend for managing **workspaces** and **documents**, with full-text search support. Built with SQLAlchemy ORM and SQLite.
-
----
-
-## Project Structure
-
-```
-.
-├── backend/
-│   ├── __init__.py
-│   ├── main.py          # App entry point, router registration, DB init
-│   ├── db.py            # Engine, session, Base, get_db dependency
-│   ├── models.py        # SQLAlchemy ORM models
-│   ├── schemas.py       # Pydantic request/response schemas
-│   ├── crud.py          # Database access functions
-│   ├── api/
-│   │   ├── __init__.py
-│   │   ├── workspaces.py
-│   │   ├── documents.py
-│   │   └── query.py
-│   └── core/
-│       ├── __init__.py
-│       └── config.py    # Environment-based settings
-├── tests/
-│   ├── __init__.py
-│   ├── test_workspaces.py
-│   ├── test_documents.py
-│   └── test_query.py
-├── requirements.txt
-└── README.md
-```
+A FastAPI-based backend that enables users to upload documents, store knowledge, and query it using AI-powered Retrieval-Augmented Generation (RAG).
 
 ---
 
-## Setup
+# 🚀 Features (Completed)
 
-### 1. Install dependencies
+## 🧱 Core Backend
 
-```bash
+* FastAPI application (`main.py`)
+* Modular architecture (api, ingestion, core)
+* SQLAlchemy database integration
+* Pydantic schemas for validation
+
+---
+
+## 📂 Workspaces
+
+* Create and manage workspaces
+* Logical isolation of knowledge
+* Each workspace stores independent documents
+
+---
+
+## 📄 Document Management
+
+* Create documents via text input
+* Upload files (PDF, DOCX, TXT)
+* Store full document content in relational DB
+
+---
+
+## 🧩 Ingestion Pipeline (NEW 🔥)
+
+Implemented full pipeline:
+
+```
+Upload → Extract → Clean → Chunk → Embed → Store
+```
+
+### Components:
+
+* `uploader.py` → handles file uploads
+* `extractor.py` → extracts text from files
+* `chunker.py` → splits text into chunks
+
+### Supported formats:
+
+* PDF
+* DOCX
+* TXT
+
+---
+
+## 🔍 Embeddings
+
+* Uses OpenAI / local embedding models
+* Converts text chunks into vectors
+
+---
+
+## 🗄️ Vector Database
+
+* ChromaDB integration
+* Stores chunk embeddings
+* Metadata stored:
+
+  * document_id
+  * workspace_id
+  * chunk_index
+
+---
+
+## 🤖 RAG (Retrieval-Augmented Generation)
+
+* Query embedding → similarity search
+* Retrieves relevant chunks
+* Passes context to LLM
+
+---
+
+## 💬 Chat / Query API
+
+* Ask questions on uploaded data
+* Returns context-aware answers
+
+---
+
+## 🧪 Tests
+
+* Workspace tests
+* Document tests
+* Query tests
+
+---
+
+# 🧱 Project Structure
+
+```
+backend/
+│
+├── main.py
+├── db.py
+├── models.py
+├── schemas.py
+├── crud.py
+├── embeddings.py
+├── vector_store.py
+├── rag.py
+│
+├── api/
+│   ├── chat.py
+│   ├── documents.py
+│   ├── query.py
+│   ├── upload.py
+│   └── workspaces.py
+│
+├── ingestion/
+│   ├── uploader.py
+│   ├── extractor.py
+│   └── chunker.py
+│
+├── core/
+│   └── config.py
+│
+└── tests/
+```
+
+---
+
+# ⚙️ Setup Instructions
+
+## 1. Clone repository
+
+```
+git clone <repo-url>
+cd backend
+```
+
+---
+
+## 2. Create virtual environment
+
+### Windows
+
+```
+python -m venv venv
+venv\Scripts\activate
+```
+
+### Mac/Linux
+
+```
+python3 -m venv venv
+source venv/bin/activate
+```
+
+---
+
+## 3. Install dependencies
+
+```
 pip install -r requirements.txt
 ```
 
-### 2. Run the development server
-
-```bash
-uvicorn backend.main:app --reload
-```
-
-The API will be available at: `http://127.0.0.1:8000`
-
-Interactive docs: `http://127.0.0.1:8000/docs`
-
 ---
 
-## Environment Variables
+## 4. Set environment variables
 
-| Variable       | Default              | Description              |
-|----------------|----------------------|--------------------------|
-| `APP_NAME`     | `Workspace API`      | Application name         |
-| `APP_VERSION`  | `1.0.0`              | Application version      |
-| `DEBUG`        | `false`              | Enable debug mode        |
-| `DATABASE_URL` | `sqlite:///./app.db` | SQLAlchemy database URL  |
+Create `.env`:
 
----
-
-## API Overview
-
-### Health
-
-| Method | Endpoint | Description     |
-|--------|----------|-----------------|
-| GET    | `/`      | Health check    |
-
-### Workspaces
-
-| Method | Endpoint               | Description              |
-|--------|------------------------|--------------------------|
-| POST   | `/workspaces`          | Create a new workspace   |
-| GET    | `/workspaces`          | List all workspaces      |
-| DELETE | `/workspaces/{id}`     | Delete workspace by ID   |
-
-### Documents
-
-| Method | Endpoint                             | Description                         |
-|--------|--------------------------------------|-------------------------------------|
-| POST   | `/documents`                         | Create a new document               |
-| GET    | `/documents?workspace_id={id}`       | List documents for a workspace      |
-
-### Query
-
-| Method | Endpoint | Description                              |
-|--------|----------|------------------------------------------|
-| POST   | `/query` | Full-text search across document content |
-
----
-
-## Example Requests
-
-**Create a workspace**
-```bash
-curl -X POST http://localhost:8000/workspaces \
-  -H "Content-Type: application/json" \
-  -d '{"name": "My Workspace"}'
 ```
-
-**Create a document**
-```bash
-curl -X POST http://localhost:8000/documents \
-  -H "Content-Type: application/json" \
-  -d '{"workspace_id": 1, "content": "Hello world"}'
-```
-
-**Search documents**
-```bash
-curl -X POST http://localhost:8000/query \
-  -H "Content-Type: application/json" \
-  -d '{"query": "hello"}'
+OPENAI_API_KEY=your_key_here
 ```
 
 ---
 
-## Running Tests
+## 5. Run server
 
-```bash
-pytest tests/
 ```
+uvicorn main:app --reload
+```
+
+---
+
+# 🧪 Testing Modules
+
+---
+
+## 🟢 1. Workspace API
+
+### Create workspace
+
+```
+POST /workspaces
+```
+
+Body:
+
+```json
+{
+  "name": "Test Workspace"
+}
+```
+
+---
+
+### List workspaces
+
+```
+GET /workspaces
+```
+
+---
+
+## 🟢 2. Document API (Text)
+
+### Create document
+
+```
+POST /documents
+```
+
+Body:
+
+```json
+{
+  "workspace_id": 1,
+  "content": "This is a test document"
+}
+```
+
+---
+
+## 🟢 3. Document Upload API (FILE) 🔥
+
+### Upload file
+
+```
+POST /documents/upload
+```
+
+Form-data:
+
+```
+workspace_id = 1
+file = (PDF/DOCX/TXT)
+```
+
+---
+
+### What happens internally:
+
+```
+File uploaded
+→ Text extracted
+→ Chunked (500–800 words)
+→ Embedded
+→ Stored in vector DB
+```
+
+---
+
+## 🟢 4. Query API
+
+### Ask question
+
+```
+POST /query
+```
+
+Body:
+
+```json
+{
+  "workspace_id": 1,
+  "query": "What is this document about?"
+}
+```
+
+---
+
+### Response:
+
+```json
+{
+  "answer": "...",
+  "sources": [...]
+}
+```
+
+---
+
+## 🟢 5. Chat API
+
+```
+POST /chat
+```
+
+* Multi-turn interaction
+* Uses RAG internally
+
+---
+
+# 🔍 Debugging Tips
+
+---
+
+## Check stored chunks
+
+```
+vector_store.count()
+```
+
+---
+
+## Print query results
+
+Add debug:
+
+```
+print(vector_store.query(...))
+```
+
+---
+
+## Check ingestion
+
+Upload a file and verify:
+
+* chunks created
+* embeddings stored
+
+---
+
+# ⚠️ Known Limitations
+
+* No authentication (yet)
+* No streaming responses
+* Basic chunking (not semantic)
+* No reranking
+* No frontend
+
+---
+
+# 🚀 Next Improvements
+
+---
+
+## 🔥 High Priority
+
+* Workspace filtering in vector DB queries
+* Better chunking (semantic)
+* Prompt engineering
+
+---
+
+## ⚡ Medium
+
+* Chat memory
+* Streaming responses
+* File preview
+
+---
+
+## 🧠 Advanced
+
+* Hybrid search (BM25 + vector)
+* Reranking
+* Agent-based reasoning
+
+---
+
+# 💡 System Architecture
+
+```
+User
+ ↓
+FastAPI
+ ↓
+Upload API
+ ↓
+Ingestion Pipeline
+ ↓
+Vector DB (Chroma)
+ ↓
+RAG
+ ↓
+LLM
+ ↓
+Response
+```
+
+---
+
+# 🧠 Summary
+
+This backend enables:
+
+✔ Upload documents
+✔ Convert them into AI-understandable format
+✔ Store knowledge efficiently
+✔ Ask questions over private data
+
+---
+
+# 🏁 Final Vision
+
+This system acts like:
+
+```
+Your own private ChatGPT trained on your documents
+```
+
+---
