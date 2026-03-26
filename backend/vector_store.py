@@ -40,35 +40,65 @@ class VectorStore:
 
     # ── Read ───────────────────────────────────────────────────────────────────
 
-    def query(self, query_embedding, workspace_id: int | None = None, n_results: int = 5):
-        where_filter = None
-
+    def query(
+        self,
+        query_embedding: list[float],
+        workspace_id: int | None = None,
+        n_results: int = 5,
+    ) -> list[dict]:
+        if not query_embedding:
+            return []
+    
+        if n_results < 1:
+            n_results = 5
+    
+        query_kwargs = {
+            "query_embeddings": [query_embedding],
+            "n_results": n_results,
+            "include": ["documents", "metadatas", "distances"],
+        }
         if workspace_id is not None:
-            where_filter = {"workspace_id": workspace_id}
-
-        results = self._collection.query(
-            query_embeddings=[query_embedding],
-            n_results=n_results,
-            where=where_filter,
-            include=["documents", "metadatas", "distances"],
-        )
-
+            query_kwargs["where"] = {"workspace_id": workspace_id}
+    
+        try:
+            results = self._collection.query(**query_kwargs)
+        except Exception as exc:
+            print(f"[VECTOR_STORE][QUERY_ERROR] {exc}")
+            raise RuntimeError("Vector store query failed") from exc
+    
+        ids_batches = results.get("ids") or []
+        docs_batches = results.get("documents") or []
+        metas_batches = results.get("metadatas") or []
+        dist_batches = results.get("distances") or []
+    
+        if not ids_batches or not docs_batches or not metas_batches or not dist_batches:
+            return []
+    
+        ids = ids_batches[0]
+        docs = docs_batches[0]
+        metas = metas_batches[0]
+        dists = dist_batches[0]
+    
+        if not ids or not docs or not metas or not dists:
+            return []
+    
+        n = min(len(ids), len(docs), len(metas), len(dists))
+        if n == 0:
+            return []
+    
         hits = []
-        # 🔥 FIX 1: handle empty results safely
-        if not results.get("ids") or not results["ids"][0]:
-            return hits
-        for idx in range(len(results["ids"][0])):
-            meta = results["metadatas"][0][idx]
+        for i in range(n):
+            meta = metas[i] if isinstance(metas[i], dict) else {}
             hits.append(
                 {
-                    "id":           results["ids"][0][idx],
-                    "text":         results["documents"][0][idx],
-                    "distance":     results["distances"][0][idx],
-                    "document_id":  meta.get("document_id"),
+                    "id": ids[i],
+                    "text": docs[i],
+                    "distance": dists[i],
+                    "document_id": meta.get("document_id"),
                     "workspace_id": meta.get("workspace_id"),
                 }
             )
-
+    
         return hits
 
     # ── Helpers ────────────────────────────────────────────────────────────────
