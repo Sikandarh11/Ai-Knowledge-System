@@ -20,6 +20,7 @@ def get_rag_service() -> RAGService:
 
 class ChatRequest(BaseModel):
     query: str = Field(..., min_length=1, description="The question to answer.")
+    history: list[dict] = []
 
 
 class SourceDocument(BaseModel):
@@ -50,8 +51,43 @@ def chat(payload: ChatRequest) -> ChatResponse:
     """
     rag = get_rag_service()
 
+    history = (payload.history or [])[-6:]
+    conversation_lines: list[str] = []
+    total_chars = 0
+
+    for msg in history:
+        if not isinstance(msg, dict):
+            continue
+
+        role = msg.get("role")
+        content = msg.get("content")
+
+        if role not in {"user", "assistant"} or not isinstance(content, str) or not content.strip():
+            continue
+
+        line = f"User: {content.strip()}" if role == "user" else f"Assistant: {content.strip()}"
+
+        if total_chars + len(line) > 4000:
+            break
+
+        conversation_lines.append(line)
+        total_chars += len(line)
+
+    conversation_text = "\n".join(conversation_lines)
+
+    if conversation_text:
+        query_text = (
+            "You are a helpful assistant.\n\n"
+            "Conversation so far:\n"
+            f"{conversation_text}\n\n"
+            "Question:\n"
+            f"{payload.query}"
+        )
+    else:
+        query_text = payload.query
+
     try:
-        result = rag.run(query=payload.query)
+        result = rag.run(query=query_text)
     except Exception as exc:
         raise HTTPException(
             status_code=500,
