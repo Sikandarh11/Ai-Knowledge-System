@@ -54,6 +54,9 @@ class VectorStore:
         )
 
         hits = []
+        # 🔥 FIX 1: handle empty results safely
+        if not results.get("ids") or not results["ids"][0]:
+            return hits
         for idx in range(len(results["ids"][0])):
             meta = results["metadatas"][0][idx]
             hits.append(
