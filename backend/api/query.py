@@ -13,4 +13,7 @@ class QueryRequest(BaseModel):
 
 @router.post("", response_model=list[schemas.DocumentRead])
 def search_documents(payload: QueryRequest, db: Session = Depends(get_db)):
-    return crud.search_documents(db, query=payload.query)
+    query = payload.query
+    if not query or not query.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+    return crud.search_documents(db, query=query)

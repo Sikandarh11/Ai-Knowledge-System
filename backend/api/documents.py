@@ -33,7 +33,31 @@ def get_vector_store() -> VectorStore:
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
+@router.delete("/{document_id}")
+def delete_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+):
+    # 1. Get vector store
+    store = get_vector_store()
 
+    # 2. Check document exists
+    document = crud.get_document(db, document_id=document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # 3. Delete from vector DB FIRST
+    try:
+        store.delete_document(document_id)
+        print(f"[VECTOR_DELETE] doc={document_id}")
+    except Exception as exc:
+        print(f"[VECTOR_DELETE_ERROR] doc={document_id} error={exc}")
+
+    # 4. Delete from relational DB
+    crud.delete_document(db, document_id=document_id)
+
+    return {"message": "Document deleted"}
+    
 @router.post("", response_model=schemas.DocumentRead)
 def create_document(payload: schemas.DocumentCreate, db: Session = Depends(get_db)):
     # 1. Persist to relational DB
@@ -54,10 +78,12 @@ def create_document(payload: schemas.DocumentCreate, db: Session = Depends(get_d
             ids        = [f"doc_{document.id}_chunk_0"],
             texts      = [document.content],
             embeddings = [embedding],
-            metadata   = [
+            metadata = [
                 {
-                    "document_id":  document.id,
+                    "document_id": document.id,
                     "workspace_id": document.workspace_id,
+                    "chunk_index": 0,
+                    "filename": "text_input",
                 }
             ],
         )
@@ -89,7 +115,7 @@ def upload_document_file(
 
         file_path = upload_info["file_path"]
         file_type = upload_info["file_type"]
-        filename = upload_info["filename"]
+        filename = upload_info.get("filename") or file.filename or "unknown"
 
         # -------------------------
         # 2. Extract text
@@ -120,6 +146,8 @@ def upload_document_file(
         # 5. Generate embeddings
         # -------------------------
         embeddings = embedder.embed_batch(chunks)
+        if len(embeddings) != len(chunks):
+            raise HTTPException(status_code=500, detail="Embedding mismatch")
 
         # -------------------------
         # 6. Store in vector DB
@@ -143,6 +171,7 @@ def upload_document_file(
             embeddings=embeddings,
             metadata=metadatas,
         )
+        print(f"[UPLOAD] doc={document.id} chunks={len(chunks)}")
 
         # -------------------------
         # 7. Cleanup temp file

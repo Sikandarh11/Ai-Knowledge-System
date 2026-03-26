@@ -33,12 +33,17 @@ def create_document(db: Session, workspace_id: int, content: str):
     db.commit()
     db.refresh(document)
     return document
-
+def delete_document(db: Session, document_id: int):
+    document = get_document(db, document_id)
+    if document:
+        db.delete(document)
+        db.commit()
 
 def get_documents_by_workspace(db: Session, workspace_id: int):
     return db.query(models.Document).filter(models.Document.workspace_id == workspace_id).all()
 
-
+def get_document(db: Session, document_id: int):
+    return db.query(models.Document).filter(models.Document.id == document_id).first()
 # ── Search ─────────────────────────────────────────────────────────────────────
 
 def search_documents(db: Session, query: str):

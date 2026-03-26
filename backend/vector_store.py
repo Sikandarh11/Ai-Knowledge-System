@@ -46,8 +46,8 @@ class VectorStore:
         workspace_id: int | None = None,
         n_results: int = 5,
     ) -> list[dict]:
-        if not query_embedding:
-            return []
+        if not query_embedding or not any(query_embedding):
+            raise ValueError("Query embedding is empty")
     
         if n_results < 1:
             n_results = 5
