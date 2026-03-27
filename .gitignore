@@ -9,7 +9,8 @@
 __pycache__/
 *.pyc
 *.pyo
-
+/test
+/features
 # Virtual environments
 .venv/
 venv/
@@ -18,4 +19,3 @@ venv/
 .vscode/
 .idea/
 
-remaining.txt
