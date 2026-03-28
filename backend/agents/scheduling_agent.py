@@ -270,12 +270,27 @@ def parse_intent(query: str) -> ParsedQuery:
         result.duration_minutes = duration
 
     # --- Summary (title extraction) -----------------------------------------
+    # Only extract an explicit title when the user names it with a keyword.
+    # Avoid grabbing duration/time fragments like "30 minutes" or "1 hour".
     title_match = re.search(
-        r'(?:called|titled|named|for|about|re:?)\s+"?([^"]+?)"?\s*(?:on|at|$)',
+        r'(?:called|titled|named|about|re:?)\s+"?([^"]+?)"?\s*(?:on|at|tomorrow|next|today|\d|$)',
         query, re.IGNORECASE,
     )
     if title_match:
-        result.summary = title_match.group(1).strip().title()
+        candidate = title_match.group(1).strip()
+        # Reject if it looks like a duration or time token
+        if not re.fullmatch(r'[\d\s]*(hour|hr|minute|min|am|pm|h|m)s?', candidate, re.I):
+            result.summary = candidate.title()
+    else:
+        # Fall back to a known meeting-type word in the query
+        meeting_m = re.search(
+            r'\b(standup|stand-up|sync|call|interview|review|retrospective|retro'
+            r'|one-on-one|1:1|kickoff|check-in|demo|workshop|training|webinar'
+            r'|meeting|appointment|catch-up|catchup)\b',
+            query, re.IGNORECASE,
+        )
+        if meeting_m:
+            result.summary = meeting_m.group(1).title()
 
     # --- Validation ---------------------------------------------------------
     if result.intent == Intent.UNKNOWN:
@@ -297,8 +312,8 @@ def parse_intent(query: str) -> ParsedQuery:
 def _fmt_slot(slot: dict[str, Any]) -> str:
     """Format a slot dict into a human-readable string."""
     try:
-        start = datetime.fromisoformat(slot["start"])
-        end   = datetime.fromisoformat(slot["end"])
+        start = datetime.fromisoformat(slot["start"].replace("Z", "+00:00"))
+        end   = datetime.fromisoformat(slot["end"].replace("Z", "+00:00"))
         return (
             f"  • {start.strftime('%A %d %b %Y, %H:%M')} – "
             f"{end.strftime('%H:%M')} UTC"
@@ -310,8 +325,8 @@ def _fmt_slot(slot: dict[str, Any]) -> str:
 def _fmt_event(event: dict[str, Any]) -> str:
     """Format a created-event dict into a human-readable confirmation line."""
     try:
-        start = datetime.fromisoformat(event["start"])
-        end   = datetime.fromisoformat(event["end"])
+        start = datetime.fromisoformat(event["start"].replace("Z", "+00:00"))
+        end   = datetime.fromisoformat(event["end"].replace("Z", "+00:00"))
         return (
             f"\"{event.get('summary', 'Meeting')}\" on "
             f"{start.strftime('%A %d %b %Y')} from "
@@ -505,7 +520,7 @@ class SchedulingAgent:
 
         return AgentResponse(
             success=False,
-            message= (
+            message=(
                 "I wasn't sure what you wanted. Try:\n"
                 "  • 'Book a meeting …'\n"
                 "  • 'Am I free on …'\n"
