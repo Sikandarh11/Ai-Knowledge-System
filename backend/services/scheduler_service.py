@@ -55,6 +55,8 @@ def _parse_utc(iso_string: str) -> datetime:
     Raises:
         ValueError: If ``iso_string`` cannot be parsed.
     """
+    # Python 3.10 doesn't support the Z suffix — replace it with +00:00
+    iso_string = iso_string.replace("Z", "+00:00")
     dt = datetime.fromisoformat(iso_string)
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
