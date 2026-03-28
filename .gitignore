@@ -4,7 +4,7 @@
 # Database files
 *.db
 *.sqlite3
-
+/backend/tests
 # Python
 __pycache__/
 *.pyc
