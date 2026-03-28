@@ -1,6 +1,7 @@
 # Environment
 .env
-
+/backend/services/credentials.json
+/backend/services/token.pickle
 # Database files
 *.db
 *.sqlite3
