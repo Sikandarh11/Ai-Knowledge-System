@@ -37,8 +37,8 @@ logger = logging.getLogger(__name__)
 SCOPES: list[str] = ["https://www.googleapis.com/auth/gmail.readonly"]
 
 # Default file locations — override via authenticate_gmail() parameters.
-DEFAULT_CREDENTIALS_FILE = Path("credentials.json")
-DEFAULT_TOKEN_FILE        = Path("token.json")
+DEFAULT_CREDENTIALS_FILE = Path("backend\\services\\credentials.json")
+DEFAULT_TOKEN_FILE        = Path("backend\\services\\token.pickle")
 
 API_NAME    = "gmail"
 API_VERSION = "v1"
