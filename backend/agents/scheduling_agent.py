@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any
-
+from zoneinfo import ZoneInfo
 from backend.tools.calendar_tool import CalendarTool
 from backend.services.scheduler_service import (
     has_conflict,
@@ -149,7 +149,7 @@ def _resolve_date(raw: str) -> str | None:
     Handles ISO dates, 'today', 'tomorrow', weekday names, and slash/dash
     formats (M/D/YYYY).  Returns ``None`` when parsing fails.
     """
-    today = datetime.now(tz=timezone.utc).date()
+    today = datetime.now(ZoneInfo("Asia/Karachi")).date()
     raw = raw.strip().lower()
 
     if raw == "today":
@@ -448,7 +448,23 @@ class SchedulingAgent:
     """
 
     def __init__(self, calendar_tool: CalendarTool | None = None) -> None:
-        self._calendar = calendar_tool or CalendarTool()
+        self._calendar: CalendarTool | None = calendar_tool
+        self._calendar_init_error: str | None = None
+
+    def _get_calendar(self) -> CalendarTool | None:
+        """Initialize CalendarTool on demand and capture startup failures."""
+        if self._calendar is not None:
+            return self._calendar
+        if self._calendar_init_error is not None:
+            return None
+
+        try:
+            self._calendar = CalendarTool()
+            return self._calendar
+        except Exception as exc:
+            self._calendar_init_error = str(exc)
+            logger.exception("SchedulingAgent calendar initialization failed")
+            return None
 
     # ------------------------------------------------------------------
     # Public entry-point
@@ -486,9 +502,23 @@ class SchedulingAgent:
             ).to_dict()
 
         # 2. Fetch current events
-        events_result = self._calendar.get_events(
+        calendar = self._get_calendar()
+        if calendar is None:
+            return build_response(
+                parsed,
+                False,
+                None,
+                [],
+                [],
+                error=(
+                    "Calendar service is currently unavailable: "
+                    f"{self._calendar_init_error or 'unknown error'}"
+                ),
+            ).to_dict()
+
+        events_result = calendar.get_events(
             max_results=50,
-            time_min=f"{parsed.date or datetime.now(tz=timezone.utc).date().isoformat()}T00:00:00+00:00",
+            time_min=f"{parsed.date or datetime.now(ZoneInfo('Asia/Karachi')).date().isoformat()}T00:00:00+00:00",
         )
         if not events_result["success"]:
             return build_response(
