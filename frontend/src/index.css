@@ -1,0 +1,86 @@
+/* Tailwind v4 import — replaces the old @tailwind base/components/utilities */
+@import "tailwindcss";
+
+/* Import Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ─── Tailwind v4 Custom Theme ───────────────────────
+   In v4, custom colors/shadows are defined here
+   using @theme instead of tailwind.config.js
+   This replaces the "extend" section we had before
+─────────────────────────────────────────────────── */
+@theme {
+  /* Dark background colors */
+  --color-dark-900: #0a0a0f;
+  --color-dark-800: #111118;
+  --color-dark-700: #1a1a24;
+  --color-dark-600: #252532;
+  --color-dark-500: #32324a;
+
+  /* Neon accent colors */
+  --color-neon-purple: #7c3aed;
+  --color-neon-blue:   #2563eb;
+  --color-neon-cyan:   #06b6d4;
+  --color-neon-glow:   #a78bfa;
+
+  /* Custom glow shadows */
+  --shadow-neon-sm: 0 0 8px rgba(124, 58, 237, 0.4);
+  --shadow-neon-md: 0 0 20px rgba(124, 58, 237, 0.5);
+  --shadow-neon-lg: 0 0 40px rgba(124, 58, 237, 0.3);
+
+  /* Fonts */
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+/* ─── Base reset ─────────────────────────────────── */
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html, body, #root {
+    height: 100%;
+    width: 100%;
+  }
+
+  body {
+    background-color: #0a0a0f;
+    color: #e2e8f0;
+    font-family: 'Inter', sans-serif;
+    scrollbar-width: thin;
+    scrollbar-color: #7c3aed #1a1a24;
+  }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: #1a1a24; }
+  ::-webkit-scrollbar-thumb { background: #7c3aed; border-radius: 3px; }
+}
+
+/* ─── Reusable utility classes ───────────────────── */
+@layer utilities {
+  /* Neon text glow */
+  .text-glow {
+    text-shadow: 0 0 20px rgba(167, 139, 250, 0.8);
+  }
+
+  /* Subtle gradient for cards */
+  .card-gradient {
+    background: linear-gradient(135deg, #1a1a24 0%, #111118 100%);
+  }
+
+  /* Neon border glow */
+  .neon-border {
+    border: 1px solid #7c3aed;
+    box-shadow: 0 0 8px rgba(124, 58, 237, 0.4);
+  }
+
+  /* Glass morphism effect */
+  .glass {
+    background: rgba(26, 26, 36, 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+}
