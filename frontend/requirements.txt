@@ -1,0 +1,20 @@
+Node.js v18 or above — download from nodejs.org
+download and install Node.js, which includes npm (Node Package Manager).
+
+
+
+# 1. Clone or receive your project folder
+# then navigate to frontend
+cd Agentic-AI-Personal-Knowledge-System/frontend
+
+# 2. Install all dependencies (reads package.json automatically)
+npm install
+
+# 3. Create the .env file manually in frontend/ and add the following line to it:
+VITE_API_BASE_URL=http://localhost:8000
+
+# 4. Run the project
+npm run dev
+
+# 5. Open browser at
+http://localhost:5173
