@@ -20,21 +20,68 @@ All times are UTC ISO-8601 throughout.
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from backend.core.config import settings
 from backend.tools.calendar_tool import CalendarTool
 from backend.services.scheduler_service import (
     has_conflict,
     find_free_slots,
     suggest_alternative,
 )
-
+from dotenv import load_dotenv
+load_dotenv()
 logger = logging.getLogger(__name__)
+
+_PARSER_MODEL = settings.SCHEDULER_PARSER_MODEL
+
+
+def _get_scheduler_timezone() -> ZoneInfo:
+    try:
+        return ZoneInfo(settings.SCHEDULER_TIMEZONE)
+    except ZoneInfoNotFoundError:
+        logger.warning(
+            "Invalid SCHEDULER_TIMEZONE=%r. Falling back to UTC.",
+            settings.SCHEDULER_TIMEZONE,
+        )
+        return ZoneInfo("UTC")
+
+
+_SCHEDULER_TZ = _get_scheduler_timezone()
+
+_PARSER_SYSTEM_PROMPT = """\
+You extract structured scheduling data from a user query.
+
+Today's date (UTC): {today}
+
+Return ONLY a valid JSON object with exactly these keys:
+{{
+    "intent": "check|create|suggest|unknown",
+    "date": "YYYY-MM-DD or null",
+    "time": "HH:MM:SS or null",
+    "duration_minutes": <integer, default 30>,
+    "summary": "short meeting title"
+}}
+
+Rules:
+- Resolve relative dates like today/tomorrow/next Monday using today's date.
+- Convert 12-hour time to 24-hour time and include seconds.
+- If no duration is given use 30.
+- Keep summary short and useful, default to "Meeting".
+- If user asks to check availability, intent=check.
+- If user asks to book/create/schedule, intent=create.
+- If user asks for options/recommendations/available slots, intent=suggest.
+- If unclear, intent=unknown.
+- Return raw JSON only (no markdown, no extra text).
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -54,16 +101,19 @@ class ParsedQuery:
     intent: Intent          = Intent.UNKNOWN
     date: str | None        = None   # ISO date, e.g. "2024-06-01"
     time: str | None        = None   # ISO time, e.g. "09:00:00"
-    duration_minutes: int   = 30
+    duration_minutes: int   = settings.SCHEDULER_DEFAULT_DURATION_MINUTES
     summary: str            = "Meeting"
     raw_query: str          = ""
     errors: list[str]       = field(default_factory=list)
 
     @property
     def start_iso(self) -> str | None:
-        """Combine date + time into a UTC ISO-8601 datetime string, or None."""
+        """Combine date + time in scheduler timezone and return UTC ISO string."""
         if self.date and self.time:
-            return f"{self.date}T{self.time}+00:00"
+            local_dt = datetime.fromisoformat(f"{self.date}T{self.time}").replace(
+                tzinfo=_SCHEDULER_TZ
+            )
+            return local_dt.astimezone(timezone.utc).isoformat()
         return None
 
     @property
@@ -149,7 +199,7 @@ def _resolve_date(raw: str) -> str | None:
     Handles ISO dates, 'today', 'tomorrow', weekday names, and slash/dash
     formats (M/D/YYYY).  Returns ``None`` when parsing fails.
     """
-    today = datetime.now(tz=timezone.utc).date()
+    today = datetime.now(tz=_SCHEDULER_TZ).date()
     raw = raw.strip().lower()
 
     if raw == "today":
@@ -230,6 +280,83 @@ def parse_intent(query: str) -> ParsedQuery:
         A :class:`ParsedQuery` instance (``errors`` list non-empty on issues).
     """
     result = ParsedQuery(raw_query=query)
+
+    if _parse_intent_with_llm(query, result):
+        _validate_parsed_query(result)
+        return result
+
+    # Fallback: regex extraction if LLM is unavailable/fails.
+    _parse_intent_with_regex(query, result)
+    _validate_parsed_query(result)
+    return result
+
+
+def _parse_intent_with_llm(query: str, result: ParsedQuery) -> bool:
+    """Populate ``result`` via OpenAI extraction. Returns True on success."""
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    if not api_key:
+        logger.warning("parse_intent: OPENAI_API_KEY not set; using regex fallback.")
+        return False
+
+    try:
+        import openai  # type: ignore
+    except ImportError:
+        logger.warning("parse_intent: openai package not installed; using regex fallback.")
+        return False
+
+    today = datetime.now(tz=_SCHEDULER_TZ).date().isoformat()
+    system_prompt = _PARSER_SYSTEM_PROMPT.format(today=today)
+
+    try:
+        client = openai.OpenAI(api_key=api_key, timeout=15)
+        response = client.chat.completions.create(
+            model=_PARSER_MODEL,
+            response_format={"type": "json_object"},
+            temperature=0,
+            max_tokens=400,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": query},
+            ],
+        )
+        content = (response.choices[0].message.content or "").strip()
+        payload: dict[str, Any] = json.loads(content)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("parse_intent: OpenAI extraction failed (%s); using regex fallback.", exc)
+        return False
+
+    intent_raw = str(payload.get("intent", "unknown")).strip().lower()
+    result.intent = {
+        "check": Intent.CHECK,
+        "create": Intent.CREATE,
+        "suggest": Intent.SUGGEST,
+    }.get(intent_raw, Intent.UNKNOWN)
+
+    date_raw = payload.get("date")
+    if isinstance(date_raw, str) and date_raw.strip():
+        result.date = date_raw.strip()
+
+    time_raw = payload.get("time")
+    if isinstance(time_raw, str) and time_raw.strip():
+        result.time = time_raw.strip()
+
+    duration_raw = payload.get("duration_minutes")
+    try:
+        parsed_duration = int(duration_raw)
+        if parsed_duration > 0:
+            result.duration_minutes = parsed_duration
+    except (TypeError, ValueError):
+        pass
+
+    summary_raw = payload.get("summary")
+    if isinstance(summary_raw, str) and summary_raw.strip():
+        result.summary = summary_raw.strip()
+
+    return True
+
+
+def _parse_intent_with_regex(query: str, result: ParsedQuery) -> None:
+    """Legacy regex parser used only as fallback."""
     lowered = query.lower()
 
     # --- Intent -------------------------------------------------------------
@@ -292,6 +419,9 @@ def parse_intent(query: str) -> ParsedQuery:
         if meeting_m:
             result.summary = meeting_m.group(1).title()
 
+
+def _validate_parsed_query(result: ParsedQuery) -> None:
+    """Apply common validation messages to parsed output."""
     # --- Validation ---------------------------------------------------------
     if result.intent == Intent.UNKNOWN:
         result.errors.append(
@@ -302,8 +432,6 @@ def parse_intent(query: str) -> ParsedQuery:
     if result.intent in (Intent.CHECK, Intent.CREATE) and not result.time:
         result.errors.append("No time found. Please include a time (e.g. '10am', '14:30').")
 
-    return result
-
 
 # ---------------------------------------------------------------------------
 # Response builder
@@ -312,11 +440,11 @@ def parse_intent(query: str) -> ParsedQuery:
 def _fmt_slot(slot: dict[str, Any]) -> str:
     """Format a slot dict into a human-readable string."""
     try:
-        start = datetime.fromisoformat(slot["start"].replace("Z", "+00:00"))
-        end   = datetime.fromisoformat(slot["end"].replace("Z", "+00:00"))
+        start = datetime.fromisoformat(slot["start"].replace("Z", "+00:00")).astimezone(_SCHEDULER_TZ)
+        end = datetime.fromisoformat(slot["end"].replace("Z", "+00:00")).astimezone(_SCHEDULER_TZ)
         return (
             f"  • {start.strftime('%A %d %b %Y, %H:%M')} – "
-            f"{end.strftime('%H:%M')} UTC"
+            f"{end.strftime('%H:%M')} {settings.SCHEDULER_TIMEZONE}"
         )
     except (KeyError, ValueError):
         return f"  • {slot.get('start', '?')} – {slot.get('end', '?')}"
@@ -325,12 +453,12 @@ def _fmt_slot(slot: dict[str, Any]) -> str:
 def _fmt_event(event: dict[str, Any]) -> str:
     """Format a created-event dict into a human-readable confirmation line."""
     try:
-        start = datetime.fromisoformat(event["start"].replace("Z", "+00:00"))
-        end   = datetime.fromisoformat(event["end"].replace("Z", "+00:00"))
+        start = datetime.fromisoformat(event["start"].replace("Z", "+00:00")).astimezone(_SCHEDULER_TZ)
+        end = datetime.fromisoformat(event["end"].replace("Z", "+00:00")).astimezone(_SCHEDULER_TZ)
         return (
             f"\"{event.get('summary', 'Meeting')}\" on "
             f"{start.strftime('%A %d %b %Y')} from "
-            f"{start.strftime('%H:%M')} to {end.strftime('%H:%M')} UTC"
+            f"{start.strftime('%H:%M')} to {end.strftime('%H:%M')} {settings.SCHEDULER_TIMEZONE}"
         )
     except (KeyError, ValueError):
         return str(event)
@@ -395,7 +523,9 @@ def build_response(
             lines = ["🔴 You're busy at that time. Here are some alternatives:\n"]
             lines += [_fmt_slot(s) for s in alternatives]
         else:
-            lines = [f"🟢 You're free on {parsed.date} at {parsed.time} UTC. No conflicts found."]
+            lines = [
+                f"🟢 You're free on {parsed.date} at {parsed.time} {settings.SCHEDULER_TIMEZONE}. No conflicts found."
+            ]
         return AgentResponse(
             success=True,
             message="\n".join(lines),
@@ -410,7 +540,10 @@ def build_response(
             lines = [f"📅 Here are available slots on {parsed.date}:\n"]
             lines += [_fmt_slot(s) for s in free_slots[:5]]
         else:
-            lines = [f"😔 No free slots found on {parsed.date} during working hours (09:00–18:00 UTC)."]
+            lines = [
+                f"😔 No free slots found on {parsed.date} during working hours "
+                f"({settings.SCHEDULER_WORK_START_HOUR:02d}:00-{settings.SCHEDULER_WORK_END_HOUR:02d}:00 {settings.SCHEDULER_TIMEZONE})."
+            ]
         return AgentResponse(
             success=True,
             message="\n".join(lines),
@@ -450,6 +583,11 @@ class SchedulingAgent:
     def __init__(self, calendar_tool: CalendarTool | None = None) -> None:
         self._calendar = calendar_tool or CalendarTool()
 
+    @staticmethod
+    def _local_day_start_utc_iso(date_iso: str) -> str:
+        local_start = datetime.fromisoformat(f"{date_iso}T00:00:00").replace(tzinfo=_SCHEDULER_TZ)
+        return local_start.astimezone(timezone.utc).isoformat()
+
     # ------------------------------------------------------------------
     # Public entry-point
     # ------------------------------------------------------------------
@@ -487,8 +625,10 @@ class SchedulingAgent:
 
         # 2. Fetch current events
         events_result = self._calendar.get_events(
-            max_results=50,
-            time_min=f"{parsed.date or datetime.now(tz=timezone.utc).date().isoformat()}T00:00:00+00:00",
+            max_results=settings.SCHEDULER_EVENT_FETCH_MAX_RESULTS,
+            time_min=self._local_day_start_utc_iso(
+                parsed.date or datetime.now(tz=_SCHEDULER_TZ).date().isoformat()
+            ),
         )
         if not events_result["success"]:
             return build_response(
@@ -568,6 +708,7 @@ class SchedulingAgent:
                 summary=parsed.summary,
                 start_time=parsed.start_iso,
                 end_time=parsed.end_iso,
+                timezone_str=settings.SCHEDULER_TIMEZONE,
             )
             if not create_result["success"]:
                 return build_response(
@@ -660,7 +801,7 @@ class SchedulingAgent:
 
         slots_result = find_free_slots(
             events,
-            date=f"{parsed.date}T00:00:00+00:00",
+            date=self._local_day_start_utc_iso(parsed.date),
             slot_minutes=parsed.duration_minutes,
         )
         if not slots_result["success"]:
