@@ -17,7 +17,7 @@ google_calendar:
     - https://www.googleapis.com/auth/calendar
 
 scheduler:
-  timezone: UTC
+  timezone: Asia/Karachi
   work_start_hour: 9
   work_end_hour: 18
   min_slot_minutes: 30
