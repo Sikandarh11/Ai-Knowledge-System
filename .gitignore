@@ -15,7 +15,7 @@ __pycache__/
 # Virtual environments
 .venv/
 venv/
-
+/backend/auth
 # IDE
 .vscode/
 .idea/
