@@ -1,7 +1,5 @@
 # Environment
 .env
-/backend/services/credentials.json
-/backend/services/token.pickle
 # Database files
 *.db
 *.sqlite3
@@ -15,7 +13,7 @@ __pycache__/
 # Virtual environments
 .venv/
 venv/
-/backend/auth
+/backend/secrets
 # IDE
 .vscode/
 .idea/
