@@ -18,6 +18,9 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -25,13 +28,27 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-WORK_START_HOUR: int = 9          # 09:00 UTC
-WORK_END_HOUR: int = 18           # 18:00 UTC
-MIN_SLOT_MINUTES: int = 30
+WORK_START_HOUR: int = settings.SCHEDULER_WORK_START_HOUR
+WORK_END_HOUR: int = settings.SCHEDULER_WORK_END_HOUR
+MIN_SLOT_MINUTES: int = settings.SCHEDULER_MIN_SLOT_MINUTES
 _SLOT_DELTA = timedelta(minutes=MIN_SLOT_MINUTES)
 _DAY_DELTA = timedelta(days=1)
-MAX_ALTERNATIVE_DAYS: int = 7     # look-ahead window for alternatives
-MAX_ALTERNATIVES: int = 3         # how many suggestions to return
+MAX_ALTERNATIVE_DAYS: int = settings.SCHEDULER_MAX_ALTERNATIVE_DAYS
+MAX_ALTERNATIVES: int = settings.SCHEDULER_MAX_ALTERNATIVES
+
+
+def _get_scheduler_timezone() -> ZoneInfo:
+    try:
+        return ZoneInfo(settings.SCHEDULER_TIMEZONE)
+    except ZoneInfoNotFoundError:
+        logger.warning(
+            "Invalid SCHEDULER_TIMEZONE=%r. Falling back to UTC.",
+            settings.SCHEDULER_TIMEZONE,
+        )
+        return ZoneInfo("UTC")
+
+
+_SCHEDULER_TZ = _get_scheduler_timezone()
 
 
 # ---------------------------------------------------------------------------
@@ -80,12 +97,26 @@ def _working_window(date: datetime) -> tuple[datetime, datetime]:
     Returns:
         ``(work_start, work_end)`` as UTC-aware ``datetime`` objects.
     """
-    d = date.astimezone(timezone.utc).date()
-    work_start = datetime(d.year, d.month, d.day, WORK_START_HOUR, 0, 0,
-                          tzinfo=timezone.utc)
-    work_end = datetime(d.year, d.month, d.day, WORK_END_HOUR, 0, 0,
-                        tzinfo=timezone.utc)
-    return work_start, work_end
+    local_date = date.astimezone(_SCHEDULER_TZ).date()
+    work_start_local = datetime(
+        local_date.year,
+        local_date.month,
+        local_date.day,
+        WORK_START_HOUR,
+        0,
+        0,
+        tzinfo=_SCHEDULER_TZ,
+    )
+    work_end_local = datetime(
+        local_date.year,
+        local_date.month,
+        local_date.day,
+        WORK_END_HOUR,
+        0,
+        0,
+        tzinfo=_SCHEDULER_TZ,
+    )
+    return work_start_local.astimezone(timezone.utc), work_end_local.astimezone(timezone.utc)
 
 
 def _parse_events(
@@ -354,7 +385,7 @@ def find_free_slots(
                 success=False,
                 error=(
                     f"slot_minutes ({slot_minutes}) exceeds the working window "
-                    f"({WORK_START_HOUR}:00–{WORK_END_HOUR}:00 UTC)."
+                    f"({WORK_START_HOUR}:00-{WORK_END_HOUR}:00 {settings.SCHEDULER_TIMEZONE})."
                 ),
             )
 
