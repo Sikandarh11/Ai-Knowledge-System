@@ -639,8 +639,18 @@ class SchedulingAgent:
                 error="; ".join(parsed.errors),
             ).to_dict()
 
+        calendar = self._get_calendar()
+        if calendar is None:
+            error_message = self._calendar_init_error or "Calendar service is unavailable."
+            return AgentResponse(
+                success=False,
+                message=f"Sorry, I couldn't access your calendar: {error_message}",
+                intent=parsed.intent,
+                error=error_message,
+            ).to_dict()
+
         # 2. Fetch current events
-        events_result = self._calendar.get_events(
+        events_result = calendar.get_events(
             max_results=settings.SCHEDULER_EVENT_FETCH_MAX_RESULTS,
             time_min=self._local_day_start_utc_iso(
                 parsed.date or datetime.now(tz=_SCHEDULER_TZ).date().isoformat()
