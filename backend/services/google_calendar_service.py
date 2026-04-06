@@ -1,21 +1,25 @@
-"""
-Compatibility wrapper for Google Calendar service.
-
-This module provides the interface expected by `backend.tools.calendar_tool`
-while reusing the existing authentication/bootstrap logic in
-`backend.services.google_calendar`.
-"""
+"""Google Calendar service wrapper using centralized auth manager."""
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from backend.services.google_calendar import GoogleCalendarService as _LegacyGoogleCalendarService
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+
+from backend.services.google_auth_manager import get_credentials
+
+logger = logging.getLogger(__name__)
 
 
-class GoogleCalendarService(_LegacyGoogleCalendarService):
-    """Adapter exposing list/create/delete APIs used by CalendarTool."""
+class GoogleCalendarService:
+    """Calendar API adapter exposing list/create/delete APIs used by CalendarTool."""
+
+    def __init__(self) -> None:
+        creds = get_credentials()
+        self.service = build("calendar", "v3", credentials=creds)
 
     def list_events(
         self,
@@ -40,8 +44,15 @@ class GoogleCalendarService(_LegacyGoogleCalendarService):
         if query:
             params["q"] = query
 
-        events_result = self.service.events().list(**params).execute()
-        return events_result.get("items", [])
+        try:
+            events_result = self.service.events().list(**params).execute()
+            return events_result.get("items", [])
+        except HttpError as exc:
+            logger.exception("Google Calendar list_events failed: %s", exc)
+            raise RuntimeError(f"Google Calendar API error: {exc}") from exc
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Calendar list_events unexpected error: %s", exc)
+            raise RuntimeError(f"Calendar service error: {exc}") from exc
 
     def create_event(
         self,
@@ -64,7 +75,14 @@ class GoogleCalendarService(_LegacyGoogleCalendarService):
                 "end": {"dateTime": end_time, "timeZone": "UTC"},
             }
 
-        return self.service.events().insert(calendarId=calendar_id, body=body).execute()
+        try:
+            return self.service.events().insert(calendarId=calendar_id, body=body).execute()
+        except HttpError as exc:
+            logger.exception("Google Calendar create_event failed: %s", exc)
+            raise RuntimeError(f"Google Calendar API error: {exc}") from exc
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Calendar create_event unexpected error: %s", exc)
+            raise RuntimeError(f"Calendar service error: {exc}") from exc
 
     def delete_event(
         self,
@@ -76,5 +94,12 @@ class GoogleCalendarService(_LegacyGoogleCalendarService):
         if not event_id:
             raise ValueError("'event_id' is required")
 
-        self.service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
-        return {"status": "deleted", "event_id": event_id}
+        try:
+            self.service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
+            return {"status": "deleted", "event_id": event_id}
+        except HttpError as exc:
+            logger.exception("Google Calendar delete_event failed: %s", exc)
+            raise RuntimeError(f"Google Calendar API error: {exc}") from exc
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Calendar delete_event unexpected error: %s", exc)
+            raise RuntimeError(f"Calendar service error: {exc}") from exc
