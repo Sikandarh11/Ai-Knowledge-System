@@ -28,17 +28,22 @@ from googleapiclient.errors import HttpError
 
 logger = logging.getLogger(__name__)
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
 # Add extra scopes here if you need more than read-only access, e.g.:
 #   "https://www.googleapis.com/auth/gmail.send"
-SCOPES: list[str] = ["https://www.googleapis.com/auth/gmail.readonly"]
+SCOPES: list[str] = [
+                    "https://www.googleapis.com/auth/gmail.readonly",
+                    "https://www.googleapis.com/auth/gmail.send"
+                    ]
 
 # Default file locations — override via authenticate_gmail() parameters.
-DEFAULT_CREDENTIALS_FILE = Path("backend\\services\\credentials.json")
-DEFAULT_TOKEN_FILE        = Path("backend\\services\\token.pickle")
+DEFAULT_CREDENTIALS_FILE = PROJECT_ROOT / "backend" / "secrets" / "credentials.json"
+DEFAULT_TOKEN_FILE        = PROJECT_ROOT / "backend" / "secrets" / "token.pickle"
 
 API_NAME    = "gmail"
 API_VERSION = "v1"
@@ -47,6 +52,46 @@ API_VERSION = "v1"
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _resolve_path(path_value: str | Path, *, must_exist: bool) -> Path:
+    """
+    Resolve a user-provided path in a cwd-safe way.
+
+    For relative inputs, we try the current working directory first,
+    then project-root-relative, then backend-relative. This allows calls like
+    ``backend/secrets/credentials.json`` to work regardless of whether the
+    process starts in repository root or in ``backend``.
+    """
+    input_path = Path(path_value)
+    if input_path.is_absolute():
+        return input_path
+
+    candidates: list[Path] = [
+        Path.cwd() / input_path,
+        PROJECT_ROOT / input_path,
+    ]
+
+    if not input_path.parts or input_path.parts[0].lower() != "backend":
+        candidates.append(PROJECT_ROOT / "backend" / input_path)
+
+    seen: set[Path] = set()
+    unique_candidates: list[Path] = []
+    for candidate in candidates:
+        resolved_candidate = candidate.resolve(strict=False)
+        if resolved_candidate not in seen:
+            seen.add(resolved_candidate)
+            unique_candidates.append(resolved_candidate)
+
+    for candidate in unique_candidates:
+        if candidate.exists():
+            return candidate
+
+    if not must_exist:
+        for candidate in unique_candidates:
+            if candidate.parent.exists():
+                return candidate
+
+    return unique_candidates[0]
 
 def _load_credentials(token_path: Path) -> Credentials | None:
     """
@@ -98,6 +143,15 @@ def _refresh_credentials(creds: Credentials) -> bool:
         return False
     except TransportError as exc:
         logger.warning("Token refresh failed (network error): %s", exc)
+        return False
+
+
+def _has_required_scopes(creds: Credentials, required_scopes: list[str]) -> bool:
+    """Return True when credentials include all scopes required by this app."""
+    try:
+        return creds.has_scopes(required_scopes)
+    except Exception:  # noqa: BLE001
+        # Be conservative: if we cannot verify scopes, force re-consent.
         return False
 
 
@@ -204,10 +258,18 @@ def authenticate_gmail(
         for msg in results.get("messages", []):
             print(msg["id"])
     """
-    credentials_path = Path(credentials_path)
-    token_path       = Path(token_path)
+    credentials_path = _resolve_path(credentials_path, must_exist=True)
+    print(f"Authenticating Gmail API with credentials from {credentials_path}")
+    token_path       = _resolve_path(token_path, must_exist=False)
 
     creds: Credentials | None = _load_credentials(token_path)
+
+    if creds and not _has_required_scopes(creds, SCOPES):
+        logger.info(
+            "Stored token is missing required scopes; starting browser OAuth flow."
+        )
+        creds = _run_browser_flow(credentials_path)
+        _save_credentials(creds, token_path)
 
     if creds and creds.valid:
         logger.info("Using existing valid credentials from %s", token_path)

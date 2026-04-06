@@ -1,15 +1,15 @@
 import os
 import datetime
 import pickle
-
+from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+from backend.core.config import settings
 
-SCOPES = ['https://www.googleapis.com/auth/calendar']
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-TOKEN_PATH = os.path.join(BASE_DIR, "token.json")
-CREDENTIALS_PATH = os.path.join(BASE_DIR, "credentials.json")
+SCOPES = settings.GOOGLE_CALENDAR_SCOPES
+TOKEN_PATH = settings.GOOGLE_CALENDAR_TOKEN_PATH
+CREDENTIALS_PATH = settings.GOOGLE_CALENDAR_CREDENTIALS_PATH
 
 
 class GoogleCalendarService:
@@ -20,21 +20,31 @@ class GoogleCalendarService:
     
 
     def _authenticate(self):
-        if os.path.exists(TOKEN_PATH):
-            with open(TOKEN_PATH, 'rb') as token:
-                self.creds = pickle.load(token)
+        if TOKEN_PATH.exists():
+            try:
+                # Load granted scopes from token file as-is; do not override here.
+                self.creds = Credentials.from_authorized_user_file(str(TOKEN_PATH))
+            except Exception:
+                with open(TOKEN_PATH, 'rb') as token:
+                    self.creds = pickle.load(token)
+
+        # Force re-consent when an existing token was issued with insufficient scopes.
+        if self.creds and hasattr(self.creds, "has_scopes") and not self.creds.has_scopes(SCOPES):
+            self.creds = None
+            if TOKEN_PATH.exists():
+                TOKEN_PATH.unlink()
 
         if not self.creds or not self.creds.valid:
             if self.creds and self.creds.expired and self.creds.refresh_token:
                 self.creds.refresh(Request())
             else:
                 flow = InstalledAppFlow.from_client_secrets_file(
-                    CREDENTIALS_PATH, SCOPES
+                    str(CREDENTIALS_PATH), SCOPES
                 )
-                self.creds = flow.run_local_server(port=0)
+                self.creds = flow.run_local_server(port=0, prompt="consent")
 
-            with open(TOKEN_PATH, 'wb') as token:
-                pickle.dump(self.creds, token)
+            TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+            TOKEN_PATH.write_text(self.creds.to_json(), encoding='utf-8')
 
         return build('calendar', 'v3', credentials=self.creds)
     # -----------------------------

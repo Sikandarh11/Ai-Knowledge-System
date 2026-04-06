@@ -33,7 +33,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Literal, Protocol, runtime_checkable
-
+from zoneinfo import ZoneInfo
 logger = logging.getLogger(__name__)
 
 
@@ -114,7 +114,7 @@ _TIME_OF_DAY: dict[str, str] = {
 
 
 def _today_utc() -> date:
-    return datetime.now(tz=timezone.utc).date()
+    return datetime.now(ZoneInfo("Asia/Karachi")).date()
 
 
 def _resolve_relative_date(token: str) -> str | None:
