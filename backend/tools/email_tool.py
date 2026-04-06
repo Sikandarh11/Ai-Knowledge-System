@@ -10,7 +10,7 @@ Responsibilities:
     - Strip HTML to return clean readable text
 
 No authentication logic lives here — pass in the service object returned
-by ``gmail_auth.authenticate_gmail()``.
+by ``backend.services.google_auth_manager.get_credentials()`` + Gmail build.
 
 Consistent with calendar_tool.py:
     - Every public function returns ``{"success": bool, "data": ..., "error": str | None}``
@@ -25,9 +25,8 @@ import logging
 import re
 from email import message_from_bytes
 from email.message import Message
-from typing import Any
-import base64
 from email.mime.text import MIMEText
+from typing import Any
 
 from googleapiclient.errors import HttpError
 
@@ -343,7 +342,7 @@ def fetch_emails(
 
     Args:
         service:     Gmail API service object returned by
-                     ``gmail_auth.authenticate_gmail()``.
+                     ``build("gmail", "v1", credentials=get_credentials())``.
         max_results: Maximum number of emails to return (default 5, max 500).
         label_ids:   Optional list of Gmail label IDs to filter by
                      (e.g. ``["INBOX"]``, ``["UNREAD"]``).
@@ -380,10 +379,12 @@ def fetch_emails(
 
     Example::
 
-        from gmail_auth import authenticate_gmail
+        from googleapiclient.discovery import build
+        from backend.services.google_auth_manager import get_credentials
         from backend.tools.email_tool import fetch_emails
 
-        service = authenticate_gmail()
+        creds = get_credentials()
+        service = build("gmail", "v1", credentials=creds)
 
         # Latest 5 inbox emails
         result = fetch_emails(service)
@@ -440,10 +441,6 @@ def fetch_emails(
         logger.exception("fetch_emails unexpected error: %s", exc)
         return _build_response(success=False, error=str(exc))
 
-
-
-import base64
-from email.mime.text import MIMEText
 
 
 def send_email(
