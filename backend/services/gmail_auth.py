@@ -36,11 +36,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 # Add extra scopes here if you need more than read-only access, e.g.:
 #   "https://www.googleapis.com/auth/gmail.send"
-SCOPES: list[str] = [
-                    "https://www.googleapis.com/auth/gmail.readonly",
-                    "https://www.googleapis.com/auth/gmail.send"
-                    ]
-
+SCOPES = [
+    "openid",
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/userinfo.email"
+]
 # Default file locations — override via authenticate_gmail() parameters.
 DEFAULT_CREDENTIALS_FILE = PROJECT_ROOT / "backend" / "secrets" / "credentials.json"
 DEFAULT_TOKEN_FILE        = PROJECT_ROOT / "backend" / "secrets" / "token.pickle"
