@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_MODEL       = "gpt-4o-mini"
 DEFAULT_MAX_TOKENS  = 512
 DEFAULT_TEMPERATURE = 0.3          # low = consistent, deterministic output
-
+openai_api_key = os.environ.get("OPENAI_API_KEY", "")
 ToneType = Literal["formal", "friendly", "concise"]
 
 
@@ -160,7 +160,9 @@ class _OpenAIClient:
         self.model       = model
         self.max_tokens  = max_tokens
         self.temperature = temperature
-        self._client     = self._build(api_key or os.environ.get("OPENAI_API_KEY", ""))
+        if not api_key:
+            api_key = openai_api_key
+        self._client     = self._build(api_key)
 
     def _build(self, api_key: str) -> Any:
         if not api_key:
@@ -427,6 +429,27 @@ class EmailAgent:
 
         return result
 
+    def send_reply(
+        self,
+        email: dict[str, Any],
+        reply_text: str,
+    ) -> dict[str, Any]:
+        """
+        Build the outgoing email payload for a drafted reply.
+
+        Args:
+            email: Parsed incoming email dict.
+            reply_text: Reply content to send back to the sender.
+
+        Returns:
+            A dict with ``to``, ``subject``, and ``body`` keys.
+        """
+        return {
+            "to": email.get("sender"),
+            "subject": f"Re: {email.get('subject')}",
+            "body": reply_text,
+        }
+
 
 # ---------------------------------------------------------------------------
 # Module-level convenience wrappers
@@ -489,3 +512,15 @@ def generate_reply(
         Ready-to-send reply string.
     """
     return EmailAgent(api_key=api_key, model=model).generate_reply(email, tone=tone)
+
+
+def send_reply(
+    email: dict[str, Any],
+    reply_text: str,
+) -> dict[str, Any]:
+    """Build the outgoing email payload for a reply string."""
+    return {
+        "to": email.get("sender"),
+        "subject": f"Re: {email.get('subject')}",
+        "body": reply_text,
+    }

@@ -26,6 +26,8 @@ import re
 from email import message_from_bytes
 from email.message import Message
 from typing import Any
+import base64
+from email.mime.text import MIMEText
 
 from googleapiclient.errors import HttpError
 
@@ -436,4 +438,36 @@ def fetch_emails(
         return _build_response(success=False, error=f"Gmail API error: {exc}")
     except Exception as exc:  # noqa: BLE001
         logger.exception("fetch_emails unexpected error: %s", exc)
+        return _build_response(success=False, error=str(exc))
+
+
+
+import base64
+from email.mime.text import MIMEText
+
+
+def send_email(
+    service: Any,
+    to: str,
+    subject: str,
+    body: str,
+) -> dict[str, Any]:
+    try:
+        message = MIMEText(body)
+        message["to"] = to
+        message["subject"] = subject
+
+        raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
+
+        sent = (
+            service.users()
+            .messages()
+            .send(userId="me", body={"raw": raw})
+            .execute()
+        )
+
+        return _build_response(success=True, data=sent)
+
+    except Exception as exc:
+        logger.exception("send_email failed: %s", exc)
         return _build_response(success=False, error=str(exc))

@@ -14,9 +14,9 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-
+from backend.tools.email_tool import send_email
+from backend.services.gmail_auth import authenticate_gmail
 from backend.agents.email_agent import EmailAgent
-
 logger = logging.getLogger(__name__)
 
 
@@ -277,3 +277,35 @@ def process_emails_bulk(
             "failed":    len(errors),
         },
     )
+
+def send_email_service(
+    to: str,
+    subject: str,
+    body: str,
+) -> dict[str, Any]:
+
+    try:
+        service = authenticate_gmail()
+
+        result = send_email(
+            service=service,
+            to=to,
+            subject=subject,
+            body=body,
+        )
+
+        if not result["success"]:
+            return _build_response(False, error=result["error"])
+
+        return _build_response(
+            True,
+            data={
+                "to": to,
+                "subject": subject,
+                "status": "sent"
+            }
+        )
+
+    except Exception as exc:
+        logger.exception("send_email_service failed: %s", exc)
+        return _build_response(False, error=str(exc))
