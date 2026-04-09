@@ -1,8 +1,10 @@
 from uuid import uuid4
 
-from sqlalchemy import Column, Integer, String, Text, ForeignKey
+from sqlalchemy import Column, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
-from .db import Base
+
+from backend.storage.database import Base
+
 
 class Workspace(Base):
     __tablename__ = "workspaces"

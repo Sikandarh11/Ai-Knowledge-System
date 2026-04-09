@@ -3,10 +3,9 @@ from uuid import uuid4
 from sqlalchemy import inspect, text
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from backend.db import engine
-from backend.models import Base
-from backend.api import workspaces, documents, query, chat, upload
-from backend.routes import ws
+from backend.storage.database import engine
+from backend.storage.models import Base
+from backend.api.routes import workspaces, documents, query, chat, upload
 
 
 def _ensure_workspace_schema() -> None:
@@ -57,7 +56,6 @@ app = FastAPI(
 )
 
 app.include_router(workspaces.router)
-app.include_router(ws.router)
 app.include_router(documents.router)
 app.include_router(query.router)
 app.include_router(chat.router)
