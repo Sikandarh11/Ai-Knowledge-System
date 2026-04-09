@@ -1,13 +1,50 @@
+from uuid import uuid4
+
+from sqlalchemy import inspect, text
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from backend.db import engine
-from backend.models import Base
-from backend.api import workspaces, documents, query, chat, upload
+from backend.storage.database import engine
+from backend.storage.models import Base
+from backend.api.routes import workspaces, documents, query, chat, upload
+
+
+def _ensure_workspace_schema() -> None:
+    inspector = inspect(engine)
+    if "workspaces" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("workspaces")}
+
+    with engine.begin() as connection:
+        if "workspace_id" not in columns:
+            connection.execute(text("ALTER TABLE workspaces ADD COLUMN workspace_id VARCHAR(36)"))
+            existing_rows = connection.execute(text("SELECT id FROM workspaces WHERE workspace_id IS NULL")).fetchall()
+            for row in existing_rows:
+                connection.execute(
+                    text("UPDATE workspaces SET workspace_id = :workspace_id WHERE id = :id"),
+                    {"workspace_id": str(uuid4()), "id": row.id},
+                )
+
+        if "type" not in columns:
+            connection.execute(text("ALTER TABLE workspaces ADD COLUMN type VARCHAR DEFAULT 'Work'"))
+            connection.execute(text("UPDATE workspaces SET type = 'Work' WHERE type IS NULL"))
+
+        if "description" not in columns:
+            connection.execute(text("ALTER TABLE workspaces ADD COLUMN description TEXT"))
+
+        if "owner_id" not in columns:
+            connection.execute(text("ALTER TABLE workspaces ADD COLUMN owner_id VARCHAR(255)"))
+
+        connection.execute(
+            text("CREATE UNIQUE INDEX IF NOT EXISTS ix_workspaces_workspace_id ON workspaces(workspace_id)")
+        )
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_workspaces_owner_id ON workspaces(owner_id)"))
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
+    _ensure_workspace_schema()
     yield
 
 

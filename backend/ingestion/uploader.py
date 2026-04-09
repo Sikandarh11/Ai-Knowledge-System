@@ -2,6 +2,7 @@ import os
 import tempfile
 import shutil
 from fastapi import UploadFile, HTTPException
+from backend.ingestion.loaders import detect_file_type
 
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt"}
 
@@ -24,17 +25,11 @@ async def handle_upload(file: UploadFile) -> dict:
         HTTPException 400: if the file extension is not supported.
     """
     # ── 1. Validate extension ──────────────────────────────────────────────────
-    filename  = file.filename or ""
-    _, ext    = os.path.splitext(filename.lower())
-
-    if ext not in SUPPORTED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Unsupported file type '{ext or '(none)'}'. "
-                f"Allowed types: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
-            ),
-        )
+    filename = file.filename or ""
+    try:
+        ext = detect_file_type(filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # ── 2. Save to a named temp file (preserving extension) ───────────────────
     tmp_dir  = tempfile.mkdtemp(prefix="workspace_upload_")

@@ -1,3 +1,3 @@
-from . import workspaces, documents, query, chat, upload
+from . import routes
 
-__all__ = ["workspaces", "documents", "query", "chat", "upload"]
+__all__ = ["routes"]
