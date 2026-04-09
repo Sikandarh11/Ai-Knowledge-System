@@ -28,5 +28,17 @@ class DocumentRepository:
         self.db.commit()
         return True
 
-    def search(self, query: str) -> list[Document]:
-        return self.db.query(Document).filter(Document.content.like(f"%{query}%")).all()
+    def search(self, query: str, workspace_id: int | None = None) -> list[Document]:
+        query_builder = self.db.query(Document).filter(Document.content.like(f"%{query}%"))
+        if workspace_id is not None:
+            query_builder = query_builder.filter(Document.workspace_id == workspace_id)
+        return query_builder.all()
+
+    def get_by_ids(self, document_ids: list[int], workspace_id: int | None = None) -> list[Document]:
+        if not document_ids:
+            return []
+
+        query_builder = self.db.query(Document).filter(Document.id.in_(document_ids))
+        if workspace_id is not None:
+            query_builder = query_builder.filter(Document.workspace_id == workspace_id)
+        return query_builder.all()
