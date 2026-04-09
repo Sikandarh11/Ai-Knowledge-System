@@ -114,6 +114,18 @@ class Settings:
             "DATABASE_URL",
             str(_get_nested(self._yaml, ["app", "database_url"], "sqlite:///./app.db")),
         )
+        self.JWT_SECRET_KEY: str = os.getenv(
+            "JWT_SECRET_KEY",
+            str(_get_nested(self._yaml, ["auth", "jwt_secret_key"], "change-this-in-production")),
+        )
+        self.JWT_ALGORITHM: str = os.getenv(
+            "JWT_ALGORITHM",
+            str(_get_nested(self._yaml, ["auth", "jwt_algorithm"], "HS256")),
+        )
+        self.JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = _env_int(
+            "JWT_ACCESS_TOKEN_EXPIRE_MINUTES",
+            _to_int(_get_nested(self._yaml, ["auth", "access_token_expire_minutes"], 60), 60),
+        )
 
         # Paths
         self.PROJECT_ROOT: Path = _to_path(

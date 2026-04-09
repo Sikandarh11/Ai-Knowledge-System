@@ -1,74 +1,68 @@
-import base64
-import hashlib
-import hmac
-import json
-import os
-import time
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from sqlalchemy.orm import Session
 
-bearer_scheme = HTTPBearer(auto_error=False)
+from backend.core.config import settings
+from backend.storage.database import get_db
+from backend.storage.models import User
 
-
-class CurrentUser(BaseModel):
-    user_id: str
-
-
-def _b64url_decode(segment: str) -> bytes:
-    padding = "=" * (-len(segment) % 4)
-    return base64.urlsafe_b64decode(segment + padding)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-def _verify_hs256_signature(token: str, secret: str) -> dict:
-    parts = token.split(".")
-    if len(parts) != 3:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token format")
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
 
-    header_b64, payload_b64, signature_b64 = parts
 
-    try:
-        header = json.loads(_b64url_decode(header_b64))
-        payload = json.loads(_b64url_decode(payload_b64))
-    except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload") from exc
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
 
-    if header.get("alg") != "HS256":
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unsupported token algorithm")
 
-    signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
-    expected_signature = hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
-    expected_b64 = base64.urlsafe_b64encode(expected_signature).rstrip(b"=").decode("utf-8")
-
-    if not hmac.compare_digest(expected_b64, signature_b64):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token signature")
-
-    exp = payload.get("exp")
-    if exp is not None:
-        try:
-            if int(exp) < int(time.time()):
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
-        except ValueError as exc:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token expiration") from exc
-
-    return payload
+def create_access_token(subject: str, expires_minutes: int | None = None) -> str:
+    expire_delta = timedelta(minutes=expires_minutes or settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + expire_delta
+    to_encode = {"sub": subject, "exp": expire}
+    return jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
-) -> CurrentUser:
-    if credentials is None or not credentials.credentials:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> User:
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
-    secret = os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY")
-    if not secret:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="JWT secret is not configured")
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
 
-    payload = _verify_hs256_signature(credentials.credentials, secret)
-
-    user_id = payload.get("user_id") or payload.get("sub") or payload.get("uid")
+    user_id = payload.get("sub")
     if not user_id:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token missing user identifier")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token missing subject",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
-    return CurrentUser(user_id=str(user_id))
+    user = db.query(User).filter(User.id == str(user_id)).first()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return user

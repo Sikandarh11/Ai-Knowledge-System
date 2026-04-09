@@ -25,11 +25,11 @@ class WorkspaceService:
             owner_id=owner_id,
         )
 
-    def list_workspaces(self) -> list[Workspace]:
-        return self._repo.list_all()
+    def list_workspaces(self, owner_id: str | None = None) -> list[Workspace]:
+        return self._repo.list_all(owner_id=owner_id)
 
-    def delete_workspace(self, workspace_id: int) -> bool:
-        return self._repo.delete(workspace_id)
+    def delete_workspace_for_owner(self, workspace_id: int, owner_id: str) -> tuple[bool, str | None]:
+        return self._repo.delete_for_owner(workspace_id, owner_id)
 
     def update_workspace(
         self,

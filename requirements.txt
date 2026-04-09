@@ -3,6 +3,7 @@ annotated-types==0.7.0
 anyio==4.13.0
 attrs==26.1.0
 bcrypt==5.0.0
+passlib==1.7.4
 build==1.4.2
 certifi==2026.2.25
 charset-normalizer==3.4.7
@@ -65,6 +66,7 @@ pyproject_hooks==1.2.0
 pytest==9.0.2
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
+python-jose==3.5.0
 python-multipart==0.0.22
 PyYAML==6.0.3
 referencing==0.37.0

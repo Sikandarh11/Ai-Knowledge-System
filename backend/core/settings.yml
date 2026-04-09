@@ -4,6 +4,11 @@ app:
   debug: false
   database_url: sqlite:///./app.db
 
+auth:
+  jwt_secret_key: change-this-in-production
+  jwt_algorithm: HS256
+  access_token_expire_minutes: 60
+
 paths:
   project_root: .
   backend_dir: backend
