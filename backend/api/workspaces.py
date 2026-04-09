@@ -8,7 +8,12 @@ router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
 @router.post("", response_model=schemas.WorkspaceRead)
 def create_workspace(payload: schemas.WorkspaceCreate, db: Session = Depends(get_db)):
-    return crud.create_workspace(db, name=payload.name)
+    return crud.create_workspace(
+        db,
+        name=payload.name,
+        workspace_type=payload.type.value,
+        description=payload.description,
+    )
 
 
 @router.get("", response_model=list[schemas.WorkspaceRead])
