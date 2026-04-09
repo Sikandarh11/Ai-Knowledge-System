@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from backend.rag import RAGService
-from backend.services.email import send_email_service
+from backend.services.email_service import send_email_service
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -36,6 +36,12 @@ class ChatResponse(BaseModel):
     answer:   str
     sources:  list[SourceDocument]
     used_llm: bool
+
+
+class SendEmailRequest(BaseModel):
+    to: str = Field(..., description="Email recipient address")
+    subject: str = Field(..., description="Email subject")
+    body: str = Field(..., description="Email body")
 
 
 # ── Route ──────────────────────────────────────────────────────────────────────
