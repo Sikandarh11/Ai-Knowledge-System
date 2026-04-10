@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from backend.storage.database import engine
 from backend.storage.models import Base
-from backend.api.routes import auth, workspaces, documents, query, chat, upload
+from backend.api.routes import auth, workspaces, documents, query, chat, upload, voice
 
 
 def _ensure_workspace_schema() -> None:
@@ -61,6 +61,7 @@ app.include_router(query.router)
 app.include_router(chat.router)
 app.include_router(upload.router)
 app.include_router(auth.router)
+app.include_router(voice.router)
 
 @app.get("/", tags=["health"])
 def root():
