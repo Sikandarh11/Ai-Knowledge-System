@@ -1,3 +1,3 @@
-from backend.api.routes import chat, documents, query, upload, workspaces
+from backend.api.routes import auth, chat, documents, query, upload, workspaces
 
-__all__ = ["workspaces", "documents", "query", "chat", "upload"]
+__all__ = ["auth", "workspaces", "documents", "query", "chat", "upload"]

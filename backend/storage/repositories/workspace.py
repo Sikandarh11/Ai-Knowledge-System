@@ -28,8 +28,11 @@ class WorkspaceRepository:
         self.db.refresh(workspace)
         return workspace
 
-    def list_all(self) -> list[Workspace]:
-        return self.db.query(Workspace).all()
+    def list_all(self, owner_id: str | None = None) -> list[Workspace]:
+        query = self.db.query(Workspace)
+        if owner_id is not None:
+            query = query.filter(Workspace.owner_id == owner_id)
+        return query.all()
 
     def get_by_id(self, workspace_id: int) -> Workspace | None:
         return self.db.query(Workspace).filter(Workspace.id == workspace_id).first()
@@ -37,13 +40,21 @@ class WorkspaceRepository:
     def get_by_uuid(self, workspace_id: UUID) -> Workspace | None:
         return self.db.query(Workspace).filter(Workspace.workspace_id == str(workspace_id)).first()
 
-    def delete(self, workspace_id: int) -> bool:
-        workspace = self.get_by_id(workspace_id)
+    def delete_for_owner(self, workspace_id: int, owner_id: str) -> tuple[bool, str | None]:
+        workspace = (
+            self.db.query(Workspace)
+            .filter(Workspace.id == workspace_id, Workspace.owner_id == owner_id)
+            .first()
+        )
         if workspace is None:
-            return False
+            exists = self.get_by_id(workspace_id)
+            if exists is None:
+                return False, "not_found"
+            return False, "forbidden"
+
         self.db.delete(workspace)
         self.db.commit()
-        return True
+        return True, None
 
     def update_by_uuid(
         self,
@@ -52,11 +63,18 @@ class WorkspaceRepository:
         owner_id: str,
         updates: dict,
     ) -> tuple[Workspace | None, str | None]:
-        workspace = self.get_by_uuid(workspace_id)
+        workspace = (
+            self.db.query(Workspace)
+            .filter(
+                Workspace.workspace_id == str(workspace_id),
+                Workspace.owner_id == owner_id,
+            )
+            .first()
+        )
         if workspace is None:
-            return None, "not_found"
-
-        if workspace.owner_id != owner_id:
+            exists = self.get_by_uuid(workspace_id)
+            if exists is None:
+                return None, "not_found"
             return None, "forbidden"
 
         for field, value in updates.items():

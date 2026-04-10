@@ -1,7 +1,7 @@
 from enum import Enum
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class WorkspaceType(str, Enum):
@@ -42,3 +42,18 @@ class DocumentRead(BaseModel):
     workspace_id: int
     content: str
     model_config = ConfigDict(from_attributes=True)
+
+
+class UserCreate(BaseModel):
+    email: str
+    password: str = Field(..., min_length=8)
+
+
+class UserLogin(BaseModel):
+    email: str
+    password: str = Field(..., min_length=8)
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str
