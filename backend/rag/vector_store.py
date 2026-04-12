@@ -3,13 +3,17 @@ from chromadb.config import Settings
 
 
 class VectorStore:
-    def __init__(self, persist_directory: str = "./chroma_db"):
+    def __init__(
+        self,
+        persist_directory: str = "./chroma_db",
+        collection_name: str = "documents",
+    ):
         self._client = chromadb.PersistentClient(
             path=persist_directory,
             settings=Settings(anonymized_telemetry=False),
         )
         self._collection = self._client.get_or_create_collection(
-            name="documents",
+            name=collection_name,
             metadata={"hnsw:space": "cosine"},
         )
 

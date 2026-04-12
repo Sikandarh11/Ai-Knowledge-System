@@ -16,7 +16,7 @@ class DocumentService:
     def __init__(self, db: Session):
         self._repo = DocumentRepository(db)
         self._embedder = EmbeddingService()
-        self._store = VectorStore()
+        self._store = VectorStore(collection_name=self._embedder.collection_name())
 
     def create_document(self, *, workspace_id: int, content: str) -> Document:
         document = self._repo.create(workspace_id=workspace_id, content=content)

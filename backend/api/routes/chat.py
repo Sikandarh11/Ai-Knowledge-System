@@ -1,16 +1,21 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from backend.services.chat_service import ChatService
 from backend.services.email_service import send_email_service
+from backend.storage.database import get_db
+from backend.storage.schemas import DocumentRead
 
 router = APIRouter(prefix="/chat", tags=["chat"])
-_chat_service = ChatService()
 
 
 class ChatRequest(BaseModel):
     query: str = Field(..., min_length=1, description="The question to answer.")
-    history: list[dict] = []
+    workspace_id: str | None = None
+    history: list[dict] = Field(default_factory=list)
+    mode: str | None = None
+    include_documents: bool = False
 
 
 class SourceDocument(BaseModel):
@@ -24,8 +29,11 @@ class SourceDocument(BaseModel):
 class ChatResponse(BaseModel):
     query: str
     answer: str
+    workspace_id: int | None
     sources: list[SourceDocument]
+    documents: list[DocumentRead] | None = None
     used_llm: bool
+    metadata: dict
 
 
 class SendEmailRequest(BaseModel):
@@ -35,9 +43,18 @@ class SendEmailRequest(BaseModel):
 
 
 @router.post("", response_model=ChatResponse)
-def chat(payload: ChatRequest) -> ChatResponse:
+def chat(payload: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
+    service = ChatService(db)
     try:
-        result = _chat_service.chat(query=payload.query, history=payload.history)
+        result = service.run(
+            query=payload.query,
+            workspace_id=payload.workspace_id,
+            history=payload.history,
+            mode=payload.mode,
+            include_documents=payload.include_documents,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"RAG pipeline failed: {str(exc)}") from exc
 
@@ -45,8 +62,11 @@ def chat(payload: ChatRequest) -> ChatResponse:
     return ChatResponse(
         query=result["query"],
         answer=result["answer"],
+        workspace_id=result["workspace_id"],
         sources=sources,
+        documents=result["documents"] if payload.include_documents else None,
         used_llm=result["used_llm"],
+        metadata=result["metadata"],
     )
 
 

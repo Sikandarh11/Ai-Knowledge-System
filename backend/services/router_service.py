@@ -65,8 +65,12 @@ def _search_query_sync(raw_text: str) -> Any:
 
 
 def _chat_sync(raw_text: str) -> Any:
-    service = chat_service.ChatService()
-    return service.chat(raw_text)
+    db: Session = SessionLocal()
+    try:
+        service = chat_service.ChatService(db)
+        return service.chat(raw_text)
+    finally:
+        db.close()
 
 
 def _schedule_sync(raw_text: str) -> Any:
