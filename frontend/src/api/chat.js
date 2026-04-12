@@ -1,42 +1,46 @@
 // chat.js — Multi-turn chat API call
-// Like query but maintains conversation history
-//
-// DUMMY DATA: returns fake responses right now
-// 🔌 BACKEND: replace with real POST /chat call
+// Adapts backend /chat response shape to frontend chat UI expectations.
 
 import axiosInstance from './axiosInstance'
 
-// ─── DUMMY DATA ───────────────────────────────────
-// 🔌 BACKEND: delete this when connecting
-const DUMMY_RESPONSES = [
-  "I found relevant information in your documents. The content suggests that this topic has multiple dimensions worth exploring further.",
-  "Based on what I can see in your knowledge base, there are 3 documents that relate to your question. Would you like me to summarize them?",
-  "Great question! According to the uploaded files, the answer involves several key concepts that are interconnected.",
-  "I've analyzed your documents and found that this is covered in detail in research.pdf, specifically in the methodology section.",
-]
-// ── END DUMMY DATA ─────────────────────────────────
+const toUiRelevance = (distance) => {
+  if (typeof distance !== 'number' || Number.isNaN(distance)) {
+    return 0
+  }
+
+  // Distance is lower-is-better. Convert to 0..1 relevance.
+  if (distance >= 0 && distance <= 1) {
+    return Math.max(0, 1 - distance)
+  }
+
+  return 1 / (1 + Math.max(0, distance))
+}
+
+const normalizeSource = (source, index) => {
+  const fallbackName = source.document_id ? `Document ${source.document_id}` : `Source ${index + 1}`
+  return {
+    filename: source.filename || fallbackName,
+    chunk_index: typeof source.chunk_index === 'number' ? source.chunk_index : index,
+    relevance: toUiRelevance(source.distance),
+  }
+}
 
 
 // ─── SEND a chat message ──────────────────────────
 // Backend endpoint: POST /chat
-// Body: { workspace_id: 1, message: "...", history: [...] }
+// Body: { query: "...", workspace_id: "1", history: [...] }
 // Returns: { response: "...", sources: [...] }
 export const sendChatMessage = async (workspaceId, message, history = []) => {
-  // ── DUMMY VERSION ─────────────────────────────────
-  await new Promise(resolve => setTimeout(resolve, 1200)) // simulate AI response time
-  const randomResponse = DUMMY_RESPONSES[Math.floor(Math.random() * DUMMY_RESPONSES.length)]
-  return {
-    response: randomResponse,
-    sources: [
-      { filename: 'research.pdf', chunk_index: 2, relevance: 0.89 },
-    ]
-  }
+  const response = await axiosInstance.post('/chat', {
+    query: message,
+    workspace_id: workspaceId != null ? String(workspaceId) : null,
+    history,
+    include_documents: false,
+  })
 
-  // 🔌 BACKEND: delete dummy code above, uncomment below:
-  // const response = await axiosInstance.post('/chat', {
-  //   workspace_id: workspaceId,
-  //   message,
-  //   history,
-  // })
-  // return response.data
+  const payload = response.data
+  return {
+    response: payload.answer || '',
+    sources: (payload.sources || []).map(normalizeSource),
+  }
 }
