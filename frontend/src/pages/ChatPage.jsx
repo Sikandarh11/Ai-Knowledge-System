@@ -18,6 +18,7 @@ const ChatPage = () => {
     workspacesLoading,
     activeWorkspace,
     setActiveWorkspace,
+    currentUser,
   } = useAppContext()
 
   // Set active workspace from URL if provided
@@ -38,7 +39,7 @@ const ChatPage = () => {
     clear,
     getMessageCount,
     chatHistories,
-  } = useChat(activeWorkspace?.id)
+  } = useChat(activeWorkspace?.id, currentUser?.id)
 
   if (workspacesLoading) {
     return (

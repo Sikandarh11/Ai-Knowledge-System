@@ -18,7 +18,39 @@ const normalizeHistoryMessage = (message) => ({
   timestamp: message.created_at ? new Date(message.created_at) : new Date(),
 })
 
-const useChat = (workspaceId) => {
+const buildCacheKey = (userId) => `chat_histories:${userId || 'anonymous'}`
+
+const readCachedHistories = (userId) => {
+  if (typeof window === 'undefined') {
+    return {}
+  }
+
+  try {
+    const raw = sessionStorage.getItem(buildCacheKey(userId))
+    if (!raw) {
+      return {}
+    }
+
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+const writeCachedHistories = (userId, histories) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    sessionStorage.setItem(buildCacheKey(userId), JSON.stringify(histories))
+  } catch {
+    // Cache failures should never block chat.
+  }
+}
+
+const useChat = (workspaceId, userId = null) => {
 
   // Stores chat history per workspace
   // { workspaceId: [messages] }
@@ -28,9 +60,25 @@ const useChat = (workspaceId) => {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
+    setChatHistories(readCachedHistories(userId))
+  }, [userId])
+
+  useEffect(() => {
+    writeCachedHistories(userId, chatHistories)
+  }, [userId, chatHistories])
+
+  useEffect(() => {
     const loadWorkspaceHistory = async () => {
       if (!workspaceId) {
         return
+      }
+
+      const cachedHistories = readCachedHistories(userId)
+      if (cachedHistories[workspaceId]) {
+        setChatHistories(prev => ({
+          ...prev,
+          [workspaceId]: cachedHistories[workspaceId],
+        }))
       }
 
       try {
