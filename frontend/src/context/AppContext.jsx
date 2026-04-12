@@ -19,6 +19,8 @@ import {
 // This is the "storage box" all components can access
 const AppContext = createContext(null)
 
+const getLastWorkspaceKey = (userId) => `last_active_workspace:${userId || 'anonymous'}`
+
 // ─── Provider component ───────────────────────────
 // Wraps the entire app in App.jsx
 // Everything inside can access the context
@@ -65,6 +67,41 @@ export const AppProvider = ({ children }) => {
     fetchWorkspaces()
   }, [authToken])
 
+  useEffect(() => {
+    if (!currentUser?.id || !activeWorkspace?.id) {
+      return
+    }
+
+    try {
+      localStorage.setItem(getLastWorkspaceKey(currentUser.id), String(activeWorkspace.id))
+    } catch {
+      // Persisting the last workspace should never block the UI.
+    }
+  }, [currentUser?.id, activeWorkspace?.id])
+
+  useEffect(() => {
+    if (!currentUser?.id || workspacesLoading || activeWorkspace || workspaces.length === 0) {
+      return
+    }
+
+    try {
+      const savedWorkspaceId = localStorage.getItem(getLastWorkspaceKey(currentUser.id))
+      if (savedWorkspaceId) {
+        const restoredWorkspace = workspaces.find(
+          (workspace) => String(workspace.id) === String(savedWorkspaceId)
+        )
+        if (restoredWorkspace) {
+          setActiveWorkspace(restoredWorkspace)
+          return
+        }
+      }
+    } catch {
+      // Ignore storage errors and fall back to first workspace.
+    }
+
+    setActiveWorkspace(workspaces[0])
+  }, [currentUser?.id, workspacesLoading, workspaces, activeWorkspace])
+
   const fetchCurrentUser = async () => {
     try {
       const data = await getCurrentUser()
@@ -80,10 +117,7 @@ export const AppProvider = ({ children }) => {
       const data = await getWorkspaces()
       setWorkspaces(data)
 
-      // Auto select first workspace if none selected
-      if (data.length > 0 && !activeWorkspace) {
-        setActiveWorkspace(data[0])
-      } else if (activeWorkspace) {
+      if (activeWorkspace) {
         const refreshedActive = data.find((workspace) => workspace.id === activeWorkspace.id)
         if (refreshedActive) {
           setActiveWorkspace(refreshedActive)
