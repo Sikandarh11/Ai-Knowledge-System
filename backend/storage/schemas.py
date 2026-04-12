@@ -45,6 +45,7 @@ class DocumentRead(BaseModel):
 
 
 class UserCreate(BaseModel):
+    username: str = Field(..., min_length=3, max_length=64)
     email: str
     password: str = Field(..., min_length=8)
 
@@ -57,3 +58,10 @@ class UserLogin(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str
+
+
+class UserRead(BaseModel):
+    id: str
+    email: str
+    username: str | None = None
+    model_config = ConfigDict(from_attributes=True)

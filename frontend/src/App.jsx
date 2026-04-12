@@ -487,12 +487,29 @@
 
 
 
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import Layout from './components/layout/Layout'
 import HomePage from './pages/HomePage'
 import DocumentsPage from './pages/DocumentsPage'
 import ChatPage from './pages/ChatPage'
+import AuthPage from './pages/AuthPage'
+
+const hasAuthToken = () => Boolean(localStorage.getItem('access_token'))
+
+const ProtectedRoute = ({ children }) => {
+  if (!hasAuthToken()) {
+    return <Navigate to="/auth" replace />
+  }
+  return children
+}
+
+const PublicAuthRoute = ({ children }) => {
+  if (hasAuthToken()) {
+    return <Navigate to="/" replace />
+  }
+  return children
+}
 
 function App() {
   return (
@@ -511,23 +528,37 @@ function App() {
         }}
       />
       <Routes>
+        <Route path="/auth" element={
+          <PublicAuthRoute>
+            <AuthPage />
+          </PublicAuthRoute>
+        } />
+
         <Route path="/" element={
-          <Layout title="Home">
-            <HomePage />
-          </Layout>
+          <ProtectedRoute>
+            <Layout title="Home">
+              <HomePage />
+            </Layout>
+          </ProtectedRoute>
         } />
 
         <Route path="/documents" element={
-          <Layout title="Documents">
-            <DocumentsPage />
-          </Layout>
+          <ProtectedRoute>
+            <Layout title="Documents">
+              <DocumentsPage />
+            </Layout>
+          </ProtectedRoute>
         } />
 
         <Route path="/chat" element={
-          <Layout title="Chat">
-            <ChatPage />
-          </Layout>
+          <ProtectedRoute>
+            <Layout title="Chat">
+              <ChatPage />
+            </Layout>
+          </ProtectedRoute>
         } />
+
+        <Route path="*" element={<Navigate to={hasAuthToken() ? '/' : '/auth'} replace />} />
       </Routes>
     </>
   )

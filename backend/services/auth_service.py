@@ -6,14 +6,23 @@ class AuthService:
     def __init__(self, repo: UserRepository):
         self._repo = repo
 
-    def register(self, *, email: str, password: str) -> tuple[str, str]:
+    def register(self, *, email: str, username: str, password: str) -> tuple[str, str]:
         normalized_email = email.strip().lower()
+        normalized_username = username.strip()
+
+        if len(normalized_username) < 3:
+            raise ValueError("Username must be at least 3 characters")
+
         existing = self._repo.get_by_email(normalized_email)
         if existing is not None:
             raise ValueError("Email already registered")
 
+        existing_username = self._repo.get_by_username(normalized_username)
+        if existing_username is not None:
+            raise ValueError("Username already taken")
+
         hashed = hash_password(password)
-        user = self._repo.create(email=normalized_email, hashed_password=hashed)
+        user = self._repo.create(email=normalized_email, username=normalized_username, hashed_password=hashed)
 
         token = create_access_token(subject=user.id)
         return token, "bearer"

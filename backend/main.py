@@ -3,6 +3,7 @@ from uuid import uuid4
 from sqlalchemy import inspect, text
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from backend.storage.database import engine
 from backend.storage.models import Base
 from backend.api.routes import auth, workspaces, documents, query, chat, upload, voice
@@ -151,11 +152,38 @@ def _ensure_contacts_schema() -> None:
         connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_contacts_user_email ON contacts(user_id, email)"))
 
 
+def _ensure_users_schema() -> None:
+    inspector = inspect(engine)
+    if "users" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("users")}
+
+    with engine.begin() as connection:
+        if "username" not in columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN username VARCHAR(64)"))
+
+        # Backfill legacy rows so profile/avatar can render for existing users.
+        # Use email to guarantee uniqueness before adding unique index.
+        connection.execute(
+            text(
+                """
+                UPDATE users
+                SET username = email
+                WHERE username IS NULL OR TRIM(username) = ''
+                """
+            )
+        )
+
+        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users(username)"))
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
     _ensure_workspace_schema()
     _ensure_contacts_schema()
+    _ensure_users_schema()
     yield
 
 
@@ -164,6 +192,17 @@ app = FastAPI(
     description="Backend API for managing workspaces, documents, and RAG-powered chat.",
     version="2.0.0",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(workspaces.router)

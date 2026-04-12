@@ -28,9 +28,10 @@ const axiosInstance = axios.create({
 // Good place to add auth tokens later
 axiosInstance.interceptors.request.use(
   (config) => {
-    // 🔌 BACKEND: When you add authentication, attach token here:
-    // const token = localStorage.getItem('token')
-    // if (token) config.headers.Authorization = `Bearer ${token}`
+    const token = localStorage.getItem('access_token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
     console.log(`📤 API Request: ${config.method?.toUpperCase()} ${config.url}`)
     return config
   },

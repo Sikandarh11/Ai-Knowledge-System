@@ -9,7 +9,7 @@ from backend.storage.database import get_db
 from backend.storage.models import User
 from backend.storage.repositories.contact import ContactRepository
 from backend.storage.repositories.user import UserRepository
-from backend.storage.schemas import TokenResponse, UserCreate, UserLogin
+from backend.storage.schemas import TokenResponse, UserCreate, UserLogin, UserRead
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -18,11 +18,24 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 def register(payload: UserCreate, db: Session = Depends(get_db)):
     service = AuthService(UserRepository(db))
     try:
-        access_token, token_type = service.register(email=payload.email, password=payload.password)
+        access_token, token_type = service.register(
+            email=payload.email,
+            username=payload.username,
+            password=payload.password,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     return TokenResponse(access_token=access_token, token_type=token_type)
+
+
+@router.get("/me", response_model=UserRead)
+def me(current_user: User = Depends(get_current_user)):
+    return UserRead(
+        id=str(current_user.id),
+        email=current_user.email,
+        username=current_user.username,
+    )
 
 
 @router.post("/login", response_model=TokenResponse)

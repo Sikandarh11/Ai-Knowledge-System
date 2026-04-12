@@ -8,6 +8,7 @@
 
 import { createContext, useContext, useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
+import { getCurrentUser } from '../api/auth'
 import {
   getWorkspaces,
   createWorkspace,
@@ -33,13 +34,45 @@ export const AppProvider = ({ children }) => {
   // Shared across Sidebar, Documents, Chat
   // 🔌 BACKEND: id used in API calls as workspace_id
   const [activeWorkspace, setActiveWorkspace] = useState(null)
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('access_token'))
+  const [currentUser, setCurrentUser] = useState(null)
 
-  // ── Fetch workspaces on app load ─────────────────
-  // Runs ONCE when app starts — not per page
+  // Keep token state in sync when login/logout changes localStorage.
+  useEffect(() => {
+    const syncToken = () => setAuthToken(localStorage.getItem('access_token'))
+
+    window.addEventListener('storage', syncToken)
+    window.addEventListener('auth-changed', syncToken)
+
+    return () => {
+      window.removeEventListener('storage', syncToken)
+      window.removeEventListener('auth-changed', syncToken)
+    }
+  }, [])
+
+  // ── Fetch workspaces when authenticated ──────────
   // 🔌 BACKEND: GET /workspaces
   useEffect(() => {
+    if (!authToken) {
+      setWorkspaces([])
+      setActiveWorkspace(null)
+      setCurrentUser(null)
+      setWorkspacesLoading(false)
+      return
+    }
+
+    fetchCurrentUser()
     fetchWorkspaces()
-  }, [])
+  }, [authToken])
+
+  const fetchCurrentUser = async () => {
+    try {
+      const data = await getCurrentUser()
+      setCurrentUser(data)
+    } catch (err) {
+      setCurrentUser(null)
+    }
+  }
 
   const fetchWorkspaces = async () => {
     try {
@@ -98,12 +131,14 @@ export const AppProvider = ({ children }) => {
     workspaces,             // all workspaces array
     workspacesLoading,      // true while fetching
     activeWorkspace,        // currently selected workspace
+    currentUser,            // logged in user profile
 
     // Actions
     setActiveWorkspace,     // select a workspace
     createWorkspace: handleCreateWorkspace,
     deleteWorkspace: handleDeleteWorkspace,
     refreshWorkspaces: fetchWorkspaces,
+    refreshCurrentUser: fetchCurrentUser,
   }
 
   return (

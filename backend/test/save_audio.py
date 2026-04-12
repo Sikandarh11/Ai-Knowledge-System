@@ -5,6 +5,8 @@ import sys
 
 import sounddevice as sd
 from scipy.io.wavfile import write
+from fastapi import UploadFile
+from io import BytesIO
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -17,11 +19,12 @@ DURATION = 5
 OUTPUT_FILE = Path("recorded_audio.wav")
 
 
-class LocalUploadFile:
+class LocalUploadFile(UploadFile):
     def __init__(self, path: Path, content_type: str = "audio/wav") -> None:
         self.path = path
         self.filename = path.name
         self.content_type = content_type
+        self.file = BytesIO(path.read_bytes())
 
     async def read(self) -> bytes:
         return self.path.read_bytes()

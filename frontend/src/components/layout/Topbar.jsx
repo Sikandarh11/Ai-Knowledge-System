@@ -7,8 +7,12 @@
 // 🔌 BACKEND: workspaceName will come from AppContext
 //   which gets it from GET /workspaces API
 
-import { Search, Bell, Plus } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Search, Bell, Plus, LogOut, ChevronDown } from 'lucide-react'
 import Button from '../ui/Button'
+import { clearToken } from '../../api/auth'
+import { useAppContext } from '../../context/AppContext'
 
 const Topbar = ({
   title = 'Home',      // page title — passed from each page
@@ -16,14 +20,45 @@ const Topbar = ({
   actionLabel = '',   // label for action button e.g. "New Workspace"
   showAction = false, // show or hide the action button
 }) => {
+  const navigate = useNavigate()
+  const { currentUser } = useAppContext()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef(null)
 
-  // ── DUMMY DATA ─────────────────────────────────────
-  // 🔌 BACKEND: replace with real user/workspace data
-  //    from AppContext when backend is connected
-  const user = {
-    initials: 'AK',    // dummy user initials
+  useEffect(() => {
+    const handleOutsideClick = (event) => {
+      if (!menuRef.current?.contains(event.target)) {
+        setMenuOpen(false)
+      }
+    }
+
+    window.addEventListener('mousedown', handleOutsideClick)
+    return () => window.removeEventListener('mousedown', handleOutsideClick)
+  }, [])
+
+  const userDisplayName = useMemo(() => {
+    if (currentUser?.username?.trim()) {
+      return currentUser.username.trim()
+    }
+    if (currentUser?.email?.includes('@')) {
+      return currentUser.email.split('@')[0]
+    }
+    return 'User'
+  }, [currentUser])
+
+  const userInitials = useMemo(() => {
+    const parts = userDisplayName.split(/\s+/).filter(Boolean)
+    if (parts.length >= 2) {
+      return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
+    }
+    return userDisplayName.slice(0, 2).toUpperCase()
+  }, [userDisplayName])
+
+  const handleLogout = () => {
+    clearToken()
+    setMenuOpen(false)
+    navigate('/auth', { replace: true })
   }
-  // ── END DUMMY DATA ─────────────────────────────────
 
   return (
     // ml-64 = pushes topbar to the right of sidebar (sidebar is w-64)
@@ -100,18 +135,59 @@ const Topbar = ({
           <Bell size={17} />
         </button>
 
-        {/* User avatar with initials */}
-        {/* 🔌 BACKEND: replace initials with real user data */}
-        <div className="
-          w-9 h-9 rounded-lg
-          bg-neon-purple
-          flex items-center justify-center
-          shadow-neon-sm
-          cursor-pointer
-        ">
-          <span className="text-white text-xs font-bold">
-            {user.initials}
-          </span>
+        <div className="relative" ref={menuRef}>
+          <button
+            type="button"
+            onClick={() => setMenuOpen((prev) => !prev)}
+            className="
+              h-9 px-2 rounded-lg
+              bg-dark-700 border border-dark-500
+              flex items-center gap-2
+              hover:border-neon-purple
+              transition-colors duration-200
+            "
+          >
+            <div className="
+              w-7 h-7 rounded-md
+              bg-neon-purple
+              flex items-center justify-center
+              shadow-neon-sm
+            ">
+              <span className="text-white text-xs font-bold">
+                {userInitials}
+              </span>
+            </div>
+            <ChevronDown size={14} className="text-slate-400" />
+          </button>
+
+          {menuOpen && (
+            <div className="
+              absolute right-0 mt-2 w-48
+              rounded-xl border border-dark-500
+              bg-dark-800 shadow-xl
+              overflow-hidden
+            ">
+              <div className="px-3 py-2 border-b border-dark-500">
+                <p className="text-sm font-medium text-white truncate">{userDisplayName}</p>
+                <p className="text-xs text-slate-500 truncate">{currentUser?.email || ''}</p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="
+                  w-full px-3 py-2.5
+                  flex items-center gap-2
+                  text-sm text-slate-200
+                  hover:bg-dark-700
+                  transition-colors duration-150
+                "
+              >
+                <LogOut size={15} className="text-slate-400" />
+                Logout
+              </button>
+            </div>
+          )}
         </div>
 
       </div>
