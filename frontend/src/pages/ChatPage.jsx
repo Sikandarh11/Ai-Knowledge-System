@@ -1,6 +1,6 @@
 // ChatPage.jsx — Updated to use useChat hook + AppContext
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Database, ChevronDown } from 'lucide-react'
 import ChatWindow from '../components/chat/ChatWindow'
 import ChatInput from '../components/chat/ChatInput'
@@ -9,9 +9,10 @@ import { useAppContext } from '../context/AppContext'
 import useChat from '../hooks/useChat'
 
 const GLOBAL_CHAT_ID = '__global__'
-const GLOBAL_CHAT_LABEL = 'Global Chat'
+const GLOBAL_CHAT_LABEL = 'Global'
 
 const ChatPage = () => {
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [showWorkspaceMenu, setShowWorkspaceMenu] = useState(false)
   const [activeChatTarget, setActiveChatTarget] = useState(GLOBAL_CHAT_ID)
@@ -43,6 +44,25 @@ const ChatPage = () => {
     }
   }, [searchParams, workspaces, setActiveWorkspace])
 
+  useEffect(() => {
+    if (activeChatTarget === GLOBAL_CHAT_ID) {
+      return
+    }
+
+    const selectedWorkspace = workspaces.find(
+      workspace => String(workspace.id) === String(activeChatTarget)
+    )
+
+    if (!selectedWorkspace) {
+      setActiveChatTarget(GLOBAL_CHAT_ID)
+      return
+    }
+
+    if (!activeWorkspace || activeWorkspace.id !== selectedWorkspace.id) {
+      setActiveWorkspace(selectedWorkspace)
+    }
+  }, [activeChatTarget, workspaces, activeWorkspace, setActiveWorkspace])
+
   // useChat hook manages all chat logic
   // 🔌 BACKEND: send() calls POST /chat
   const {
@@ -62,19 +82,25 @@ const ChatPage = () => {
     )
   }
 
+  const selectedWorkspace = workspaces.find(
+    workspace => String(workspace.id) === String(activeChatTarget)
+  )
+
   const activeWorkspaceName = activeChatTarget === GLOBAL_CHAT_ID
     ? GLOBAL_CHAT_LABEL
-    : (activeWorkspace?.name || 'Select Workspace')
+    : (selectedWorkspace?.name || activeWorkspace?.name || 'Select Workspace')
 
   const handleSelectGlobalChat = () => {
     setActiveChatTarget(GLOBAL_CHAT_ID)
     setShowWorkspaceMenu(false)
+    navigate('/chat?scope=global', { replace: true })
   }
 
   const handleSelectWorkspaceChat = (workspace) => {
     setActiveWorkspace(workspace)
     setActiveChatTarget(String(workspace.id))
     setShowWorkspaceMenu(false)
+    navigate(`/chat?workspace=${workspace.id}`, { replace: true })
   }
 
   return (
@@ -197,7 +223,7 @@ const ChatPage = () => {
           disabled={loading}
           placeholder={activeChatTarget === GLOBAL_CHAT_ID
             ? 'Ask about documents across all your workspaces...'
-            : `Ask about ${activeWorkspace?.name || 'your documents'}...`}
+            : `Ask about ${selectedWorkspace?.name || activeWorkspace?.name || 'your documents'}...`}
         />
       </div>
     </div>

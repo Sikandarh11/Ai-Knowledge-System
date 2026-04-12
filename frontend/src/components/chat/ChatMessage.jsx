@@ -13,7 +13,28 @@
 import { Bot, User, FileText, AlertCircle } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
+const formatMessageTimestamp = (value) => {
+  if (!value) {
+    return ''
+  }
+
+  const dateValue = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(dateValue.getTime())) {
+    return ''
+  }
+
+  return dateValue.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 const ChatMessage = ({ message }) => {
+  const safeMessage = message && typeof message === 'object' ? message : {}
+  const contentText = typeof safeMessage.content === 'string' ? safeMessage.content : ''
+  const sources = Array.isArray(safeMessage.sources) ? safeMessage.sources : []
+  const timestampLabel = formatMessageTimestamp(safeMessage.timestamp)
+
   // message shape:
   // {
   //   id: unique id,
@@ -23,8 +44,8 @@ const ChatMessage = ({ message }) => {
   //   timestamp: Date object
   // }
 
-  const isUser = message.role === 'user'
-  const isError = message.role === 'error'
+  const isUser = safeMessage.role === 'user'
+  const isError = safeMessage.role === 'error'
 
   return (
     <div className={`
@@ -70,7 +91,7 @@ const ChatMessage = ({ message }) => {
         `}>
           {isUser ? (
             // User messages — plain text
-            <p>{message.content}</p>
+            <p>{contentText}</p>
           ) : (
             // AI messages — render as markdown
             // 🔌 BACKEND: message.content = response field from POST /chat
@@ -104,7 +125,7 @@ const ChatMessage = ({ message }) => {
                 ),
               }}
             >
-              {message.content}
+              {contentText}
             </ReactMarkdown>
           )}
         </div>
@@ -114,9 +135,9 @@ const ChatMessage = ({ message }) => {
             🔌 BACKEND: sources array from POST /chat response
             Shape: [{ filename, chunk_index, relevance }]
         ─────────────────────────────────────────── */}
-        {message.sources && message.sources.length > 0 && (
+        {sources.length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {message.sources.map((source, index) => (
+            {sources.map((source, index) => (
               <div
                 key={index}
                 className="
@@ -143,12 +164,11 @@ const ChatMessage = ({ message }) => {
         )}
 
         {/* Timestamp */}
-        <span className="text-slate-600 text-xs">
-          {message.timestamp?.toLocaleTimeString('en-US', {
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
-        </span>
+        {timestampLabel && (
+          <span className="text-slate-600 text-xs">
+            {timestampLabel}
+          </span>
+        )}
 
       </div>
     </div>

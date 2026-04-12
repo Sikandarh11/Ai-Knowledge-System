@@ -18,6 +18,21 @@ const normalizeHistoryMessage = (message) => ({
   timestamp: message.created_at ? new Date(message.created_at) : new Date(),
 })
 
+const normalizeMessageList = (value) => {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value.filter((message) => {
+    return (
+      message
+      && typeof message === 'object'
+      && typeof message.role === 'string'
+      && typeof message.content === 'string'
+    )
+  })
+}
+
 const buildCacheKey = (userId) => `chat_histories:${userId || 'anonymous'}`
 
 const readCachedHistories = (userId) => {
@@ -32,7 +47,14 @@ const readCachedHistories = (userId) => {
     }
 
     const parsed = JSON.parse(raw)
-    return parsed && typeof parsed === 'object' ? parsed : {}
+    if (!parsed || typeof parsed !== 'object') {
+      return {}
+    }
+
+    return Object.entries(parsed).reduce((acc, [key, value]) => {
+      acc[key] = normalizeMessageList(value)
+      return acc
+    }, {})
   } catch {
     return {}
   }
@@ -68,26 +90,34 @@ const useChat = (workspaceId, userId = null) => {
   }, [userId, chatHistories])
 
   useEffect(() => {
+    let cancelled = false
+
     const loadWorkspaceHistory = async () => {
       if (!workspaceId) {
         return
       }
 
       const cachedHistories = readCachedHistories(userId)
-      if (cachedHistories[workspaceId]) {
+      if (!cancelled && cachedHistories[workspaceId]) {
         setChatHistories(prev => ({
           ...prev,
-          [workspaceId]: cachedHistories[workspaceId],
+          [workspaceId]: normalizeMessageList(cachedHistories[workspaceId]),
         }))
       }
 
       try {
         const history = await getChatHistory(workspaceId)
+        if (cancelled) {
+          return
+        }
         setChatHistories(prev => ({
           ...prev,
-          [workspaceId]: history.map(normalizeHistoryMessage),
+          [workspaceId]: normalizeMessageList(history.map(normalizeHistoryMessage)),
         }))
       } catch {
+        if (cancelled) {
+          return
+        }
         // Keep local state if backend history cannot be loaded.
         if (!chatHistories[workspaceId]) {
           setChatHistories(prev => ({
@@ -99,17 +129,21 @@ const useChat = (workspaceId, userId = null) => {
     }
 
     loadWorkspaceHistory()
+
+    return () => {
+      cancelled = true
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId])
 
   // Messages for current workspace
-  const messages = chatHistories[workspaceId] || []
+  const messages = normalizeMessageList(chatHistories[workspaceId])
 
   // ── Add message to workspace history ─────────────
   const addMessage = (wsId, message) => {
     setChatHistories(prev => ({
       ...prev,
-      [wsId]: [...(prev[wsId] || []), message],
+      [wsId]: [...normalizeMessageList(prev[wsId]), message],
     }))
   }
 

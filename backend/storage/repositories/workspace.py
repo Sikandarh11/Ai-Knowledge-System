@@ -84,7 +84,7 @@ class WorkspaceRepository:
             return workspace
 
         workspace = Workspace(
-            name="Global Chat",
+            name="Global",
             type="Global",
             description="Auto-managed workspace for cross-workspace global chat.",
             owner_id=owner_id,
