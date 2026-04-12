@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from backend.agents.email_agent import EmailCommandAgent
 from backend.core.auth import get_current_user
 from backend.services.router_service import route_intent
-from backend.services.chat_service import ChatService
+from backend.services.chat_service import ChatService, GLOBAL_CHAT_WORKSPACE_TOKEN
 from backend.services.email_service import send_email_service
 from backend.storage.database import get_db
 from backend.storage.models import User
@@ -79,11 +79,6 @@ def _build_chat_response_from_router(
     )
 
 
-def _resolve_storage_workspace_id(service: ChatService, workspace_id: str | None, fallback: int | None) -> int | None:
-    resolved = service.resolve_workspace_db_id(workspace_id)
-    return resolved if resolved is not None else fallback
-
-
 @router.post("", response_model=ChatResponse)
 async def chat(
     payload: ChatRequest,
@@ -93,6 +88,7 @@ async def chat(
     query_text = payload.query.strip()
     service = ChatService(db)
     user_id = str(current_user.id)
+    is_global_chat = (payload.workspace_id or "").strip() == GLOBAL_CHAT_WORKSPACE_TOKEN
 
     if _looks_like_send_email_command(query_text):
         parser = EmailCommandAgent()
@@ -134,10 +130,16 @@ async def chat(
         chat_response = _build_chat_response_from_router(
             query=query_text,
             route_result=route_result,
-            workspace_id=workspace_int,
+            workspace_id=None if is_global_chat else workspace_int,
         )
 
-        storage_workspace_id = _resolve_storage_workspace_id(service, payload.workspace_id, chat_response.workspace_id)
+        storage_workspace_id = service.resolve_workspace_db_id(
+            payload.workspace_id,
+            user_id=user_id,
+            create_if_missing=is_global_chat,
+        )
+        if storage_workspace_id is None:
+            storage_workspace_id = chat_response.workspace_id
         if storage_workspace_id is not None:
             service.save_turn(
                 user_id=user_id,
@@ -152,7 +154,7 @@ async def chat(
     try:
         result = service.run(
             query=query_text,
-            workspace_id=payload.workspace_id,
+            workspace_id=None if is_global_chat else payload.workspace_id,
             history=payload.history,
             mode=payload.mode,
             include_documents=payload.include_documents,
@@ -173,7 +175,13 @@ async def chat(
         metadata=result["metadata"],
     )
 
-    storage_workspace_id = _resolve_storage_workspace_id(service, payload.workspace_id, chat_response.workspace_id)
+    storage_workspace_id = service.resolve_workspace_db_id(
+        payload.workspace_id,
+        user_id=user_id,
+        create_if_missing=is_global_chat,
+    )
+    if storage_workspace_id is None:
+        storage_workspace_id = chat_response.workspace_id
     if storage_workspace_id is not None:
         service.save_turn(
             user_id=user_id,
@@ -199,7 +207,11 @@ def get_chat_history(
     current_user: User = Depends(get_current_user),
 ):
     service = ChatService(db)
-    resolved_workspace_id = service.resolve_workspace_db_id(workspace_id)
+    resolved_workspace_id = service.resolve_workspace_db_id(
+        workspace_id,
+        user_id=str(current_user.id),
+        create_if_missing=(workspace_id or "").strip() == GLOBAL_CHAT_WORKSPACE_TOKEN,
+    )
     if resolved_workspace_id is None:
         raise HTTPException(status_code=400, detail="workspace_id is required")
 
@@ -216,7 +228,11 @@ def clear_chat_history(
     current_user: User = Depends(get_current_user),
 ):
     service = ChatService(db)
-    resolved_workspace_id = service.resolve_workspace_db_id(workspace_id)
+    resolved_workspace_id = service.resolve_workspace_db_id(
+        workspace_id,
+        user_id=str(current_user.id),
+        create_if_missing=(workspace_id or "").strip() == GLOBAL_CHAT_WORKSPACE_TOKEN,
+    )
     if resolved_workspace_id is None:
         raise HTTPException(status_code=400, detail="workspace_id is required")
 

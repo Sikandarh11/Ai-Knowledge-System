@@ -117,7 +117,7 @@ const useChat = (workspaceId, userId = null) => {
   // 🔌 BACKEND: POST /chat { workspace_id, message, history }
   const send = async (text) => {
     if (!workspaceId) {
-      toast.error('No workspace selected')
+      toast.error('No chat target selected')
       return
     }
 

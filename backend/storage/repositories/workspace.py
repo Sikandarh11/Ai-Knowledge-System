@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
 from backend.storage.models import Document, Workspace
@@ -47,6 +47,7 @@ class WorkspaceRepository:
                 Workspace.type,
                 Workspace.description,
             )
+            .filter(Workspace.type != "Global")
         )
 
         if owner_id is not None:
@@ -64,6 +65,34 @@ class WorkspaceRepository:
             }
             for row in rows
         ]
+
+    def get_global_workspace_for_owner(self, owner_id: str) -> Workspace | None:
+        return (
+            self.db.query(Workspace)
+            .filter(
+                and_(
+                    Workspace.owner_id == owner_id,
+                    Workspace.type == "Global",
+                )
+            )
+            .first()
+        )
+
+    def get_or_create_global_workspace_for_owner(self, owner_id: str) -> Workspace:
+        workspace = self.get_global_workspace_for_owner(owner_id)
+        if workspace is not None:
+            return workspace
+
+        workspace = Workspace(
+            name="Global Chat",
+            type="Global",
+            description="Auto-managed workspace for cross-workspace global chat.",
+            owner_id=owner_id,
+        )
+        self.db.add(workspace)
+        self.db.commit()
+        self.db.refresh(workspace)
+        return workspace
 
     def get_by_id(self, workspace_id: int) -> Workspace | None:
         return self.db.query(Workspace).filter(Workspace.id == workspace_id).first()

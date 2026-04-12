@@ -38,7 +38,7 @@ const AuthPage = () => {
 
       persistToken(response)
       toast.success(isLogin ? 'Login successful' : 'Account created successfully')
-      navigate('/')
+      navigate('/chat?scope=global')
     } catch (error) {
       const detail = error?.response?.data?.detail
       const fallback = isLogin ? 'Login failed' : 'Registration failed'

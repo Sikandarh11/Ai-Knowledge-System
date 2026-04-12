@@ -8,6 +8,10 @@ from backend.rag.pipeline import RAGService
 from backend.storage.repositories.chat import ChatRepository
 from backend.storage.models import Workspace
 from backend.storage.repositories.document import DocumentRepository
+from backend.storage.repositories.workspace import WorkspaceRepository
+
+
+GLOBAL_CHAT_WORKSPACE_TOKEN = "__global__"
 
 
 class ChatService:
@@ -15,15 +19,33 @@ class ChatService:
         self._db = db
         self._repo = DocumentRepository(db)
         self._chat_repo = ChatRepository(db)
+        self._workspace_repo = WorkspaceRepository(db)
         self._rag = RAGService()
 
-    def resolve_workspace_db_id(self, workspace_id: str | None) -> int | None:
+    def resolve_workspace_db_id(
+        self,
+        workspace_id: str | None,
+        *,
+        user_id: str | None = None,
+        create_if_missing: bool = False,
+    ) -> int | None:
         if workspace_id is None:
             return None
 
         value = workspace_id.strip()
         if not value:
             return None
+
+        if value == GLOBAL_CHAT_WORKSPACE_TOKEN:
+            if not user_id:
+                raise ValueError("Global chat requires user context")
+            if create_if_missing:
+                workspace = self._workspace_repo.get_or_create_global_workspace_for_owner(user_id)
+            else:
+                workspace = self._workspace_repo.get_global_workspace_for_owner(user_id)
+            if workspace is None:
+                raise ValueError("Global chat is not initialized for this user")
+            return int(workspace.id)
 
         if value.isdigit():
             return int(value)
