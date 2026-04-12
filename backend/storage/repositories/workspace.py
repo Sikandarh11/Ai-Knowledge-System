@@ -1,8 +1,9 @@
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from backend.storage.models import Workspace
+from backend.storage.models import Document, Workspace
 
 
 class WorkspaceRepository:
@@ -28,11 +29,41 @@ class WorkspaceRepository:
         self.db.refresh(workspace)
         return workspace
 
-    def list_all(self, owner_id: str | None = None) -> list[Workspace]:
-        query = self.db.query(Workspace)
+    def list_all(self, owner_id: str | None = None) -> list[dict]:
+        query = (
+            self.db.query(
+                Workspace.id,
+                Workspace.workspace_id,
+                Workspace.name,
+                Workspace.type,
+                Workspace.description,
+                func.count(Document.id).label("doc_count"),
+            )
+            .outerjoin(Document, Document.workspace_id == Workspace.id)
+            .group_by(
+                Workspace.id,
+                Workspace.workspace_id,
+                Workspace.name,
+                Workspace.type,
+                Workspace.description,
+            )
+        )
+
         if owner_id is not None:
             query = query.filter(Workspace.owner_id == owner_id)
-        return query.all()
+
+        rows = query.all()
+        return [
+            {
+                "id": row.id,
+                "workspace_id": row.workspace_id,
+                "name": row.name,
+                "type": row.type,
+                "description": row.description,
+                "doc_count": int(row.doc_count or 0),
+            }
+            for row in rows
+        ]
 
     def get_by_id(self, workspace_id: int) -> Workspace | None:
         return self.db.query(Workspace).filter(Workspace.id == workspace_id).first()

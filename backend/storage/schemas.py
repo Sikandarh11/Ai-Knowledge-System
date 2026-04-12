@@ -30,6 +30,7 @@ class WorkspaceRead(BaseModel):
     name: str
     type: WorkspaceType
     description: str | None = None
+    doc_count: int = 0
     model_config = ConfigDict(from_attributes=True)
 
 

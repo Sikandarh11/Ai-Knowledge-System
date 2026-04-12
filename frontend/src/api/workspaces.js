@@ -16,20 +16,7 @@ const normalizeWorkspace = (workspace) => ({
 // Backend endpoint: GET /workspaces
 export const getWorkspaces = async () => {
   const response = await axiosInstance.get('/workspaces')
-  const baseWorkspaces = response.data.map(normalizeWorkspace)
-
-  const workspacesWithCounts = await Promise.all(
-    baseWorkspaces.map(async (workspace) => {
-      try {
-        const docsResponse = await axiosInstance.get(`/documents?workspace_id=${workspace.id}`)
-        return { ...workspace, doc_count: docsResponse.data.length }
-      } catch {
-        return { ...workspace, doc_count: 0 }
-      }
-    })
-  )
-
-  return workspacesWithCounts
+  return response.data.map(normalizeWorkspace)
 }
 
 
