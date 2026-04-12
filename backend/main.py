@@ -178,12 +178,71 @@ def _ensure_users_schema() -> None:
         connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users(username)"))
 
 
+def _ensure_documents_schema() -> None:
+    inspector = inspect(engine)
+    if "documents" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("documents")}
+
+    with engine.begin() as connection:
+        if "filename" not in columns:
+            connection.execute(text("ALTER TABLE documents ADD COLUMN filename VARCHAR(255)"))
+        if "file_type" not in columns:
+            connection.execute(text("ALTER TABLE documents ADD COLUMN file_type VARCHAR(32)"))
+        if "chunk_count" not in columns:
+            connection.execute(text("ALTER TABLE documents ADD COLUMN chunk_count INTEGER"))
+        if "created_at" not in columns:
+            connection.execute(text("ALTER TABLE documents ADD COLUMN created_at DATETIME"))
+
+        connection.execute(
+            text(
+                """
+                UPDATE documents
+                SET filename = 'Document ' || id || '.txt'
+                WHERE filename IS NULL OR TRIM(filename) = ''
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE documents
+                SET file_type = 'txt'
+                WHERE file_type IS NULL OR TRIM(file_type) = ''
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE documents
+                SET chunk_count = CASE
+                    WHEN content IS NULL OR TRIM(content) = '' THEN 0
+                    ELSE ((LENGTH(content) + 799) / 800)
+                END
+                WHERE chunk_count IS NULL OR chunk_count < 0
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE documents
+                SET created_at = CURRENT_TIMESTAMP
+                WHERE created_at IS NULL
+                """
+            )
+        )
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
     _ensure_workspace_schema()
     _ensure_contacts_schema()
     _ensure_users_schema()
+    _ensure_documents_schema()
     yield
 
 

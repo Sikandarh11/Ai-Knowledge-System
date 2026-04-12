@@ -24,6 +24,10 @@ class Document(Base):
 
     id = Column(Integer, primary_key=True)
     workspace_id = Column(Integer, ForeignKey("workspaces.id"))
+    filename = Column(String(255), nullable=False, default="document.txt")
+    file_type = Column(String(32), nullable=False, default="txt")
+    chunk_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     content = Column(Text, nullable=False)
 
     workspace = relationship("Workspace", back_populates="documents")

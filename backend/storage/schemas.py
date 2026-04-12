@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
@@ -40,6 +41,10 @@ class DocumentCreate(BaseModel):
 class DocumentRead(BaseModel):
     id: int
     workspace_id: int
+    filename: str | None = None
+    file_type: str | None = None
+    chunk_count: int | None = None
+    created_at: datetime | None = None
     content: str
     model_config = ConfigDict(from_attributes=True)
 

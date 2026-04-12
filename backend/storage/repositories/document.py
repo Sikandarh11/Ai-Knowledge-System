@@ -7,8 +7,22 @@ class DocumentRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def create(self, *, workspace_id: int, content: str) -> Document:
-        document = Document(workspace_id=workspace_id, content=content)
+    def create(
+        self,
+        *,
+        workspace_id: int,
+        content: str,
+        filename: str | None = None,
+        file_type: str | None = None,
+        chunk_count: int | None = None,
+    ) -> Document:
+        document = Document(
+            workspace_id=workspace_id,
+            content=content,
+            filename=filename or "document.txt",
+            file_type=file_type or "txt",
+            chunk_count=chunk_count if chunk_count is not None else 0,
+        )
         self.db.add(document)
         self.db.commit()
         self.db.refresh(document)

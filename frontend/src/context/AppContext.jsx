@@ -83,6 +83,11 @@ export const AppProvider = ({ children }) => {
       // Auto select first workspace if none selected
       if (data.length > 0 && !activeWorkspace) {
         setActiveWorkspace(data[0])
+      } else if (activeWorkspace) {
+        const refreshedActive = data.find((workspace) => workspace.id === activeWorkspace.id)
+        if (refreshedActive) {
+          setActiveWorkspace(refreshedActive)
+        }
       }
     } catch (err) {
       toast.error('Failed to load workspaces')

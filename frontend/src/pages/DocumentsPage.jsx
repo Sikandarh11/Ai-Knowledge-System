@@ -19,9 +19,11 @@ import Loader from '../components/ui/Loader'
 import Button from '../components/ui/Button'
 import { getDocuments, uploadDocument, deleteDocument } from '../api/documents'
 import { getWorkspaces } from '../api/workspaces'
+import { useAppContext } from '../context/AppContext'
 
 const DocumentsPage = () => {
   const navigate = useNavigate()
+  const { refreshWorkspaces } = useAppContext()
 
   // ─── Get workspace ID from URL ────────────────────
   // When user clicks "Open Workspace" in HomePage
@@ -85,6 +87,12 @@ const DocumentsPage = () => {
       const newDoc = await uploadDocument(Number(workspaceId), file)
       // Add to list without refetching
       setDocuments(prev => [newDoc, ...prev])
+      setWorkspace((prev) => {
+        if (!prev) return prev
+        const count = (prev.doc_count ?? 0) + 1
+        return { ...prev, doc_count: count }
+      })
+      await refreshWorkspaces()
       toast.success(`"${file.name}" uploaded successfully!`)
     } catch (err) {
       toast.error('Upload failed. Try again.')
@@ -100,6 +108,12 @@ const DocumentsPage = () => {
       setDeletingId(id)
       await deleteDocument(id)
       setDocuments(prev => prev.filter(d => d.id !== id))
+      setWorkspace((prev) => {
+        if (!prev) return prev
+        const count = Math.max(0, (prev.doc_count ?? 0) - 1)
+        return { ...prev, doc_count: count }
+      })
+      await refreshWorkspaces()
       toast.success(`"${doc?.filename}" deleted`)
     } catch (err) {
       toast.error('Failed to delete document')
