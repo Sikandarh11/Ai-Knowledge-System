@@ -50,6 +50,18 @@ class DocumentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ChatMessageRead(BaseModel):
+    id: int
+    user_id: str
+    workspace_id: int
+    role: str
+    content: str
+    sources: list[dict] = Field(default_factory=list)
+    metadata: dict = Field(default_factory=dict)
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
 class UserCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=64)
     email: str

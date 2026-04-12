@@ -236,6 +236,45 @@ def _ensure_documents_schema() -> None:
         )
 
 
+def _ensure_chat_messages_schema() -> None:
+    inspector = inspect(engine)
+
+    with engine.begin() as connection:
+        if "chat_messages" not in inspector.get_table_names():
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE chat_messages (
+                        id INTEGER PRIMARY KEY,
+                        user_id VARCHAR(36) NOT NULL,
+                        workspace_id INTEGER NOT NULL,
+                        role VARCHAR(16) NOT NULL,
+                        content TEXT NOT NULL,
+                        sources_json TEXT,
+                        metadata_json TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(user_id) REFERENCES users(id),
+                        FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
+                    )
+                    """
+                )
+            )
+        else:
+            columns = {column["name"] for column in inspector.get_columns("chat_messages")}
+
+            if "sources_json" not in columns:
+                connection.execute(text("ALTER TABLE chat_messages ADD COLUMN sources_json TEXT"))
+            if "metadata_json" not in columns:
+                connection.execute(text("ALTER TABLE chat_messages ADD COLUMN metadata_json TEXT"))
+            if "created_at" not in columns:
+                connection.execute(text("ALTER TABLE chat_messages ADD COLUMN created_at DATETIME"))
+                connection.execute(text("UPDATE chat_messages SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"))
+
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_chat_messages_user_id ON chat_messages(user_id)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_chat_messages_workspace_id ON chat_messages(workspace_id)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_chat_messages_created_at ON chat_messages(created_at)"))
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
@@ -243,6 +282,7 @@ async def lifespan(_: FastAPI):
     _ensure_contacts_schema()
     _ensure_users_schema()
     _ensure_documents_schema()
+    _ensure_chat_messages_schema()
     yield
 
 

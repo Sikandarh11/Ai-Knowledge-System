@@ -6,9 +6,17 @@
 // const { messages, send, clear, loading } = useChat(workspaceId)
 // 🔌 BACKEND: send() calls POST /chat
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
-import { sendChatMessage } from '../api/chat'
+import { clearChatHistory, getChatHistory, sendChatMessage } from '../api/chat'
+
+const normalizeHistoryMessage = (message) => ({
+  id: message.id,
+  role: message.role,
+  content: message.content,
+  sources: message.sources || [],
+  timestamp: message.created_at ? new Date(message.created_at) : new Date(),
+})
 
 const useChat = (workspaceId) => {
 
@@ -18,6 +26,33 @@ const useChat = (workspaceId) => {
   //    GET /chat/history?workspace_id={id}
   const [chatHistories, setChatHistories] = useState({})
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    const loadWorkspaceHistory = async () => {
+      if (!workspaceId) {
+        return
+      }
+
+      try {
+        const history = await getChatHistory(workspaceId)
+        setChatHistories(prev => ({
+          ...prev,
+          [workspaceId]: history.map(normalizeHistoryMessage),
+        }))
+      } catch {
+        // Keep local state if backend history cannot be loaded.
+        if (!chatHistories[workspaceId]) {
+          setChatHistories(prev => ({
+            ...prev,
+            [workspaceId]: [],
+          }))
+        }
+      }
+    }
+
+    loadWorkspaceHistory()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId])
 
   // Messages for current workspace
   const messages = chatHistories[workspaceId] || []
@@ -82,7 +117,15 @@ const useChat = (workspaceId) => {
   }
 
   // ── Clear current workspace chat ──────────────────
-  const clear = () => {
+  const clear = async () => {
+    if (workspaceId) {
+      try {
+        await clearChatHistory(workspaceId)
+      } catch {
+        toast.error('Failed to clear chat history on server')
+      }
+    }
+
     setChatHistories(prev => ({
       ...prev,
       [workspaceId]: [],

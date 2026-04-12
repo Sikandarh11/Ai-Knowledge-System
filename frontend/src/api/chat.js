@@ -44,3 +44,19 @@ export const sendChatMessage = async (workspaceId, message, history = []) => {
     sources: (payload.sources || []).map(normalizeSource),
   }
 }
+
+export const getChatHistory = async (workspaceId) => {
+  const response = await axiosInstance.get('/chat/history', {
+    params: { workspace_id: workspaceId != null ? String(workspaceId) : '' },
+  })
+
+  return response.data
+}
+
+export const clearChatHistory = async (workspaceId) => {
+  const response = await axiosInstance.delete('/chat/history', {
+    params: { workspace_id: workspaceId != null ? String(workspaceId) : '' },
+  })
+
+  return response.data
+}
