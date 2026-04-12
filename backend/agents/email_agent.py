@@ -22,7 +22,12 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any, Literal
+
+from backend.services.contact_service import resolve_contact, upsert_contact
+from backend.services.gmail_sync_service import sync_contacts_for_user
+from backend.tools.email_tool import send_email
 
 logger = logging.getLogger(__name__)
 
@@ -524,3 +529,115 @@ def send_reply(
         "subject": f"Re: {email.get('subject')}",
         "body": reply_text,
     }
+
+
+class EmailCommandAgent:
+    """
+    Lightweight formatter for send-email command responses.
+
+    This class intentionally does not rely on OpenAI so it can be used in
+    router flows that only need recipient resolution and clarification prompts.
+    """
+
+    @staticmethod
+    def parse_send_email_command(text: str) -> dict[str, Any]:
+        normalized = (text or "").strip()
+        if not normalized:
+            return {"recipient_name": "", "body": "", "subject": "No Subject"}
+
+        pattern = r"^(?:send\s+)?(?:an\s+)?email\s+(?P<name>.+?)\s+that\s+(?P<body>.+)$"
+        match = re.match(pattern, normalized, flags=re.IGNORECASE)
+        if not match:
+            return {"recipient_name": "", "body": normalized, "subject": "No Subject"}
+
+        body = match.group("body").strip()
+        subject = "Meeting Update" if "meeting" in body.lower() else "No Subject"
+        return {
+            "recipient_name": match.group("name").strip(),
+            "body": body,
+            "subject": subject,
+        }
+
+    @staticmethod
+    def format_ambiguity_prompt(name: str, options: list[dict[str, Any]]) -> str:
+        clean_name = (name or "that contact").strip()
+        if not options:
+            return f"I found multiple matches for {clean_name}. Please provide the exact email address."
+
+        lines = [f"I found multiple contacts for {clean_name}. Which one should I use?"]
+        for index, item in enumerate(options, start=1):
+            label = item.get("name") or "Unknown"
+            email = item.get("email") or ""
+            lines.append(f"{index}. {label} <{email}>")
+        return "\n".join(lines)
+
+    def handle_send_email_request(
+        self,
+        *,
+        recipient_name: str,
+        subject: str,
+        body: str,
+        user_id: str,
+    ) -> dict[str, Any]:
+        resolution = resolve_contact(name=recipient_name, user_id=user_id)
+        state = str(resolution.get("status", "none"))
+
+        # First-time users may have an empty contacts table; trigger sync once on miss.
+        if state == "none":
+            sync_result = sync_contacts_for_user(user_id=user_id)
+            if sync_result.get("success") and int(sync_result.get("synced", 0)) > 0:
+                resolution = resolve_contact(name=recipient_name, user_id=user_id)
+                state = str(resolution.get("status", "none"))
+
+        if state == "single":
+            contact = resolution.get("contact") or {}
+            to_email = str(contact.get("email") or "").strip()
+            if not to_email:
+                return {
+                    "type": "error",
+                    "message": "Resolved contact did not include an email address.",
+                }
+
+            sent = send_email(
+                to_email=to_email,
+                subject=subject,
+                body=body,
+            )
+            if not sent.get("success"):
+                return {
+                    "type": "error",
+                    "message": sent.get("error") or "Failed to send email.",
+                }
+
+            upsert_contact(
+                user_id=user_id,
+                name=str(contact.get("name") or recipient_name),
+                email=to_email,
+                source="manual",
+                frequency_increment=1,
+            )
+
+            return {
+                "type": "email_sent",
+                "message": f"Email sent to {contact.get('name', recipient_name)} <{to_email}>.",
+                "contact": {
+                    "name": contact.get("name", recipient_name),
+                    "email": to_email,
+                },
+            }
+
+        if state == "multiple":
+            options = resolution.get("options") or []
+            return {
+                "type": "disambiguation",
+                "options": [
+                    {"name": str(item.get("name") or ""), "email": str(item.get("email") or "")}
+                    for item in options
+                ],
+                "message": self.format_ambiguity_prompt(recipient_name, options),
+            }
+
+        return {
+            "type": "missing_email",
+            "message": f"I couldn't find {recipient_name} in your contacts. Please provide an email address.",
+        }

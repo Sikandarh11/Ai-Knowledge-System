@@ -10,7 +10,7 @@ Rules:
 - Remove empty fields
 
 Supported intents:
-schedule, email, workspace, query, chat
+schedule, send_email, workspace, query, chat
 
 Format:
 
@@ -40,11 +40,13 @@ send email to ali about meeting
 
 Output:
 {
-  "intent": "email",
+  "intent": "send_email",
   "action": "send",
   "params": {
-    "to": "ali",
-    "subject": "meeting"
+    "recipient_name": "ali",
+    "subject": "meeting",
+    "body": "Let's meet to discuss the agenda.",
+    "user_id": "required-user-id"
   }
 }
 

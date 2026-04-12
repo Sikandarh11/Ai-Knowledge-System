@@ -14,10 +14,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 from backend.tools.email_tool import send_email
-from backend.services.google_auth_manager import get_credentials
 from backend.agents.email_agent import EmailAgent
 logger = logging.getLogger(__name__)
 
@@ -287,33 +284,25 @@ def send_email_service(
     subject: str,
     body: str,
 ) -> dict[str, Any]:
-
     try:
-        creds = get_credentials()
-        service = build("gmail", "v1", credentials=creds)
-
         result = send_email(
-            service=service,
-            to=to,
+            to_email=to,
             subject=subject,
             body=body,
         )
 
-        if not result["success"]:
-            return _build_response(False, error=result["error"])
+        if not result.get("success"):
+            return _build_response(False, error=result.get("error"))
 
         return _build_response(
             True,
             data={
                 "to": to,
                 "subject": subject,
-                "status": "sent"
-            }
+                "status": "sent",
+                "provider_data": result.get("data"),
+            },
         )
-
-    except HttpError as exc:
-        logger.exception("send_email_service Gmail API failed: %s", exc)
-        return _build_response(False, error=f"Gmail API error: {exc}")
     except Exception as exc:  # noqa: BLE001
         logger.exception("send_email_service failed: %s", exc)
         return _build_response(False, error=str(exc))

@@ -1,6 +1,6 @@
 from uuid import uuid4
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import relationship
 
 from backend.storage.database import Base
@@ -36,3 +36,18 @@ class User(Base):
     email = Column(String(255), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class Contact(Base):
+    __tablename__ = "contacts"
+    __table_args__ = (
+        UniqueConstraint("user_id", "email", name="uq_contacts_user_email"),
+    )
+
+    id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid4()))
+    user_id = Column(String(36), nullable=False, index=True)
+    name = Column(String(255), nullable=False, index=True)
+    email = Column(String(255), nullable=False, index=True)
+    source = Column(String(32), nullable=False, default="manual")
+    frequency = Column(Integer, nullable=False, default=1)
+    last_used = Column(DateTime(timezone=True), nullable=False, server_default=func.now())

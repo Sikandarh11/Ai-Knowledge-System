@@ -8,9 +8,9 @@ from anyio import to_thread
 from sqlalchemy.orm import Session
 
 from backend.agents.scheduling_agent import SchedulingAgent
+from backend.agents.email_agent import EmailCommandAgent
 from backend.services import chat_service, email_service, query_service, workspace_service
 from backend.storage.database import SessionLocal
-from backend.storage.models import Document, User
 
 
 def _build_response(intent: str, result: Any) -> dict[str, Any]:
@@ -83,43 +83,6 @@ def _extract_first_email(text: str) -> str | None:
     return match.group(0).strip() if match else None
 
 
-def _resolve_recipient_email_sync(recipient: str, params: dict[str, Any]) -> str | None:
-    db: Session = SessionLocal()
-    try:
-        candidate = recipient.strip()
-        if "@" in candidate:
-            return candidate
-
-        lowered = candidate.lower()
-
-        # 1) Try user table: exact local-part or fuzzy email match
-        users = db.query(User).all()
-        for user in users:
-            email = (user.email or "").strip()
-            if not email:
-                continue
-            local_part = email.split("@", 1)[0].lower()
-            if lowered == local_part or lowered in local_part or lowered in email.lower():
-                return email
-
-        # 2) Try workspace documents for named contact entries
-        workspace_id = params.get("workspace_id")
-        documents_query = db.query(Document)
-        if isinstance(workspace_id, int):
-            documents_query = documents_query.filter(Document.workspace_id == workspace_id)
-
-        for document in documents_query.all():
-            content = document.content or ""
-            if lowered in content.lower():
-                extracted = _extract_first_email(content)
-                if extracted:
-                    return extracted
-
-        return None
-    finally:
-        db.close()
-
-
 async def _run_sync_callable(callable_obj: Any, *args: Any, **kwargs: Any) -> Any:
     return await to_thread.run_sync(partial(callable_obj, *args, **kwargs))
 
@@ -138,19 +101,17 @@ async def route_intent(intent_json: dict, raw_text: str) -> dict:
                 "message": result.get("message") or "Scheduling request processed.",
                 "data": result,
             }
-        if intent == "email":
-            to_value = params.get("to")
-            subject_value = params.get("subject")
+        if intent in {"send_email", "email"}:
+            recipient_name = params.get("recipient_name") or params.get("to_name") or params.get("to")
+            subject_value = params.get("subject") or "No Subject"
             body_value = params.get("body")
+            user_id = params.get("user_id") or "default-user"
 
             missing_fields: list[str] = []
-            if not to_value:
-                missing_fields.append("to")
-            if not subject_value:
-                missing_fields.append("subject")
+            if not recipient_name:
+                missing_fields.append("recipient_name")
             if not body_value:
                 missing_fields.append("body")
-
             if missing_fields:
                 return _build_error_response(
                     "email",
@@ -158,28 +119,39 @@ async def route_intent(intent_json: dict, raw_text: str) -> dict:
                     + ", ".join(missing_fields),
                 )
 
-            resolved_email = await _run_sync_callable(_resolve_recipient_email_sync, str(to_value), params)
-            if not resolved_email:
-                return _build_error_response(
-                    "email",
-                    f"Could not find an email for recipient '{to_value}' in users/documents.",
-                )
-
-            if hasattr(email_service, "send_email_service"):
-                result = await _run_sync_callable(
+            explicit_email = _extract_first_email(str(recipient_name))
+            if explicit_email:
+                send_result = await _run_sync_callable(
                     email_service.send_email_service,
-                    to=resolved_email,
+                    to=explicit_email,
                     subject=str(subject_value),
                     body=str(body_value),
                 )
-                message = f"Email sent to {resolved_email}"
                 return {
-                    "type": "email",
-                    "status": "success" if result.get("success") else "error",
-                    "message": message if result.get("success") else (result.get("error") or "Email send failed."),
-                    "data": result,
+                    "type": "send_email",
+                    "status": "success" if send_result.get("success") else "error",
+                    "message": (
+                        f"Email sent to {explicit_email}"
+                        if send_result.get("success")
+                        else (send_result.get("error") or "Email send failed.")
+                    ),
+                    "data": send_result,
                 }
-            return _build_error_response("email", "No email sender function is available.")
+
+            agent = EmailCommandAgent()
+            result = await _run_sync_callable(
+                agent.handle_send_email_request,
+                recipient_name=str(recipient_name),
+                subject=str(subject_value),
+                body=str(body_value),
+                user_id=str(user_id),
+            )
+            return {
+                "type": "send_email",
+                "status": "success" if result.get("type") != "error" else "error",
+                "message": result.get("message") or "Email intent processed.",
+                "data": result,
+            }
         elif intent == "workspace":
             result = await _run_sync_callable(_create_workspace_sync, params)
         elif intent == "query":

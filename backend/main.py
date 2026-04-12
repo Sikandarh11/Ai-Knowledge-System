@@ -41,10 +41,121 @@ def _ensure_workspace_schema() -> None:
         connection.execute(text("CREATE INDEX IF NOT EXISTS ix_workspaces_owner_id ON workspaces(owner_id)"))
 
 
+def _ensure_contacts_schema() -> None:
+    inspector = inspect(engine)
+
+    with engine.begin() as connection:
+        if "contacts" not in inspector.get_table_names():
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE contacts (
+                        id VARCHAR(36) PRIMARY KEY,
+                        user_id VARCHAR(36) NOT NULL,
+                        name VARCHAR(255) NOT NULL,
+                        email VARCHAR(255) NOT NULL,
+                        source VARCHAR(32) NOT NULL DEFAULT 'manual',
+                        frequency INTEGER NOT NULL DEFAULT 1,
+                        last_used DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+        else:
+            column_defs = inspector.get_columns("contacts")
+            columns = {column["name"] for column in column_defs}
+
+            id_column = next((column for column in column_defs if column.get("name") == "id"), None)
+            id_type = str(id_column.get("type", "")).upper() if id_column else ""
+            id_is_text = any(token in id_type for token in ("CHAR", "TEXT", "CLOB", "VARCHAR"))
+
+            # Legacy schema may have INTEGER id; model now uses UUID strings.
+            # Rebuild table once to avoid sqlite datatype mismatch on inserts.
+            if not id_is_text:
+                last_used_expr = "COALESCE(last_used, CURRENT_TIMESTAMP)"
+                if "last_seen_at" in columns:
+                    last_used_expr = "COALESCE(last_used, last_seen_at, CURRENT_TIMESTAMP)"
+
+                connection.execute(text("DROP TABLE IF EXISTS contacts__new"))
+                connection.execute(
+                    text(
+                        """
+                        CREATE TABLE contacts__new (
+                            id VARCHAR(36) PRIMARY KEY,
+                            user_id VARCHAR(36) NOT NULL,
+                            name VARCHAR(255) NOT NULL,
+                            email VARCHAR(255) NOT NULL,
+                            source VARCHAR(32) NOT NULL DEFAULT 'manual',
+                            frequency INTEGER NOT NULL DEFAULT 1,
+                            last_used DATETIME DEFAULT CURRENT_TIMESTAMP
+                        )
+                        """
+                    )
+                )
+
+                connection.execute(
+                    text(
+                        f"""
+                        INSERT INTO contacts__new (id, user_id, name, email, source, frequency, last_used)
+                        SELECT
+                            COALESCE(NULLIF(CAST(id AS TEXT), ''), LOWER(HEX(RANDOMBLOB(16)))) AS id,
+                            CAST(user_id AS TEXT) AS user_id,
+                            COALESCE(NULLIF(TRIM(name), ''), LOWER(email)) AS name,
+                            LOWER(email) AS email,
+                            COALESCE(NULLIF(source, ''), 'manual') AS source,
+                            CASE WHEN frequency IS NULL OR frequency < 1 THEN 1 ELSE frequency END AS frequency,
+                            {last_used_expr} AS last_used
+                        FROM contacts
+                        WHERE email IS NOT NULL
+                          AND TRIM(email) <> ''
+                          AND user_id IS NOT NULL
+                          AND TRIM(CAST(user_id AS TEXT)) <> ''
+                        """
+                    )
+                )
+
+                connection.execute(text("DROP TABLE contacts"))
+                connection.execute(text("ALTER TABLE contacts__new RENAME TO contacts"))
+
+                # Refresh contact column metadata after rebuild.
+                inspector = inspect(engine)
+                column_defs = inspector.get_columns("contacts")
+                columns = {column["name"] for column in column_defs}
+
+            if "source" not in columns:
+                connection.execute(text("ALTER TABLE contacts ADD COLUMN source VARCHAR(32) DEFAULT 'manual'"))
+            if "frequency" not in columns:
+                connection.execute(text("ALTER TABLE contacts ADD COLUMN frequency INTEGER DEFAULT 1"))
+            if "last_used" not in columns:
+                connection.execute(text("ALTER TABLE contacts ADD COLUMN last_used DATETIME"))
+                if "last_seen_at" in columns:
+                    connection.execute(
+                        text(
+                            "UPDATE contacts "
+                            "SET last_used = COALESCE(last_seen_at, CURRENT_TIMESTAMP) "
+                            "WHERE last_used IS NULL"
+                        )
+                    )
+                else:
+                    connection.execute(
+                        text("UPDATE contacts SET last_used = CURRENT_TIMESTAMP WHERE last_used IS NULL")
+                    )
+
+            # Backfill defaults for rows inserted before these columns existed.
+            connection.execute(text("UPDATE contacts SET source = 'manual' WHERE source IS NULL OR source = ''"))
+            connection.execute(text("UPDATE contacts SET frequency = 1 WHERE frequency IS NULL OR frequency < 1"))
+
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_contacts_user_id ON contacts(user_id)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_contacts_name ON contacts(name)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_contacts_email ON contacts(email)"))
+        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_contacts_user_email ON contacts(user_id, email)"))
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
     _ensure_workspace_schema()
+    _ensure_contacts_schema()
     yield
 
 

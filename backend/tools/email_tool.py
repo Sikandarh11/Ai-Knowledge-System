@@ -28,7 +28,10 @@ from email.message import Message
 from email.mime.text import MIMEText
 from typing import Any
 
+from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
+from backend.services.google_auth_manager import get_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -444,14 +447,16 @@ def fetch_emails(
 
 
 def send_email(
-    service: Any,
-    to: str,
+    to_email: str,
     subject: str,
     body: str,
 ) -> dict[str, Any]:
     try:
+        creds = get_credentials()
+        service = build("gmail", "v1", credentials=creds)
+
         message = MIMEText(body)
-        message["to"] = to
+        message["to"] = to_email
         message["subject"] = subject
 
         raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
@@ -465,6 +470,9 @@ def send_email(
 
         return _build_response(success=True, data=sent)
 
+    except HttpError as exc:
+        logger.exception("send_email Gmail API failed: %s", exc)
+        return _build_response(success=False, error=f"Gmail API error: {exc}")
     except Exception as exc:
         logger.exception("send_email failed: %s", exc)
         return _build_response(success=False, error=str(exc))

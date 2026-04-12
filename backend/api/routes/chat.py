@@ -1,7 +1,11 @@
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from backend.agents.email_agent import EmailCommandAgent
+from backend.services.router_service import route_intent
 from backend.services.chat_service import ChatService
 from backend.services.email_service import send_email_service
 from backend.storage.database import get_db
@@ -42,12 +46,87 @@ class SendEmailRequest(BaseModel):
     body: str = Field(..., description="Email body")
 
 
+def _extract_email_address(text: str) -> str | None:
+    match = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
+    return match.group(0).strip() if match else None
+
+
+def _looks_like_send_email_command(text: str) -> bool:
+    lowered = (text or "").strip().lower()
+    return lowered.startswith("send email") or lowered.startswith("email ")
+
+
+def _build_chat_response_from_router(
+    query: str,
+    route_result: dict,
+    workspace_id: int | None,
+) -> ChatResponse:
+    metadata = {
+        "mode": "agent-router",
+        "router": route_result,
+    }
+    return ChatResponse(
+        query=query,
+        answer=str(route_result.get("message") or "Action processed."),
+        workspace_id=workspace_id,
+        sources=[],
+        documents=None,
+        used_llm=False,
+        metadata=metadata,
+    )
+
+
 @router.post("", response_model=ChatResponse)
-def chat(payload: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
+async def chat(payload: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
+    query_text = payload.query.strip()
+
+    if _looks_like_send_email_command(query_text):
+        parser = EmailCommandAgent()
+        parsed = parser.parse_send_email_command(query_text)
+        explicit_email = _extract_email_address(query_text)
+        recipient_name = str(parsed.get("recipient_name") or "").strip()
+        body_text = str(parsed.get("body") or query_text).strip()
+        subject_text = str(parsed.get("subject") or "No Subject").strip()
+
+        if explicit_email:
+            intent_json = {
+                "intent": "send_email",
+                "action": "send",
+                "params": {
+                    "recipient_name": explicit_email,
+                    "subject": subject_text,
+                    "body": body_text,
+                    "user_id": "default-user",
+                },
+            }
+        else:
+            intent_json = {
+                "intent": "send_email",
+                "action": "send",
+                "params": {
+                    "recipient_name": recipient_name,
+                    "subject": subject_text,
+                    "body": body_text,
+                    "user_id": "default-user",
+                },
+            }
+
+        route_result = await route_intent(intent_json, query_text)
+
+        workspace_int: int | None = None
+        if payload.workspace_id and payload.workspace_id.strip().isdigit():
+            workspace_int = int(payload.workspace_id.strip())
+
+        return _build_chat_response_from_router(
+            query=query_text,
+            route_result=route_result,
+            workspace_id=workspace_int,
+        )
+
     service = ChatService(db)
     try:
         result = service.run(
-            query=payload.query,
+            query=query_text,
             workspace_id=payload.workspace_id,
             history=payload.history,
             mode=payload.mode,
