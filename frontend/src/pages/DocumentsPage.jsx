@@ -15,6 +15,7 @@ import { Upload, FileText, ArrowLeft } from 'lucide-react'
 import toast from 'react-hot-toast'
 import DocumentCard from '../components/documents/DocumentCard'
 import UploadModal from '../components/documents/UploadModal'
+import DocumentPreviewModal from '../components/documents/DocumentPreviewModal'
 import Loader from '../components/ui/Loader'
 import Button from '../components/ui/Button'
 import { getDocuments, uploadDocument, deleteDocument } from '../api/documents'
@@ -42,6 +43,7 @@ const DocumentsPage = () => {
   const [loading, setLoading] = useState(true)
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
+  const [previewDocument, setPreviewDocument] = useState(null)
 
   // ─── Fetch data on page load ──────────────────────
   useEffect(() => {
@@ -120,6 +122,10 @@ const DocumentsPage = () => {
     } finally {
       setDeletingId(null)
     }
+  }
+
+  const handleOpenPreview = (document) => {
+    setPreviewDocument(document)
   }
 
   // ─── Loading state ────────────────────────────────
@@ -207,6 +213,7 @@ const DocumentsPage = () => {
             <DocumentCard
               key={doc.id}
               document={doc}
+              onOpen={handleOpenPreview}
               onDelete={handleDelete}
               isDeleting={deletingId === doc.id}
             />
@@ -220,6 +227,12 @@ const DocumentsPage = () => {
         onClose={() => setUploadModalOpen(false)}
         onUpload={handleUpload}
         workspaceId={workspaceId}
+      />
+
+      <DocumentPreviewModal
+        isOpen={Boolean(previewDocument)}
+        onClose={() => setPreviewDocument(null)}
+        document={previewDocument}
       />
 
     </div>

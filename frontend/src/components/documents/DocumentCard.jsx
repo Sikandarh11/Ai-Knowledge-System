@@ -39,6 +39,7 @@ const FILE_TYPE_CONFIG = {
 
 const DocumentCard = ({
   document,     // document object from API
+  onOpen,       // called when card clicked
   onDelete,     // called when delete clicked
   isDeleting,   // true when delete in progress
 }) => {
@@ -54,8 +55,12 @@ const DocumentCard = ({
   }
 
   return (
-    <div className="
+    <button
+      type="button"
+      onClick={() => onOpen?.(document)}
+      className="
       flex items-center gap-4
+      w-full text-left
       p-4 rounded-xl
       bg-dark-700
       border border-dark-500
@@ -114,8 +119,12 @@ const DocumentCard = ({
       {/* ── Delete button ─────────────────────────── */}
       {/* 🔌 BACKEND: calls DELETE /documents/{id} */}
       <button
-        onClick={() => onDelete(document.id)}
+        onClick={(event) => {
+          event.stopPropagation()
+          onDelete(document.id)
+        }}
         disabled={isDeleting}
+        type="button"
         className="
           w-8 h-8 rounded-lg flex-shrink-0
           text-slate-600
@@ -130,7 +139,7 @@ const DocumentCard = ({
         <Trash2 size={15} />
       </button>
 
-    </div>
+    </button>
   )
 }
 
