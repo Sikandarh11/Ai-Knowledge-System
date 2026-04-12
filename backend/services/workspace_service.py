@@ -25,7 +25,7 @@ class WorkspaceService:
             owner_id=owner_id,
         )
 
-    def list_workspaces(self, owner_id: str | None = None) -> list[Workspace]:
+    def list_workspaces(self, owner_id: str | None = None) -> list[dict]:
         return self._repo.list_all(owner_id=owner_id)
 
     def delete_workspace_for_owner(self, workspace_id: int, owner_id: str) -> tuple[bool, str | None]:

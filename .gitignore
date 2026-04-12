@@ -18,4 +18,4 @@ Sikvenv/
 .vscode/
 .idea/
 /chroma_db
-
+*.ipynb
