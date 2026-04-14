@@ -19,3 +19,4 @@ Sikvenv/
 .idea/
 /chroma_db
 *.ipynb
+/backend/test/saved_audio
