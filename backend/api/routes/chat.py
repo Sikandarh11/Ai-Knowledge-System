@@ -1,6 +1,6 @@
 import re
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -202,15 +202,19 @@ def send_email_endpoint(payload: SendEmailRequest):
 
 @router.get("/history", response_model=list[ChatMessageRead])
 def get_chat_history(
-    workspace_id: str,
+    workspace_id: str | None = Query(
+        default=GLOBAL_CHAT_WORKSPACE_TOKEN,
+        description="Workspace id/uuid. Leave empty to use global chat history.",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     service = ChatService(db)
+    requested_workspace = workspace_id or GLOBAL_CHAT_WORKSPACE_TOKEN
     resolved_workspace_id = service.resolve_workspace_db_id(
-        workspace_id,
+        requested_workspace,
         user_id=str(current_user.id),
-        create_if_missing=(workspace_id or "").strip() == GLOBAL_CHAT_WORKSPACE_TOKEN,
+        create_if_missing=requested_workspace.strip() == GLOBAL_CHAT_WORKSPACE_TOKEN,
     )
     if resolved_workspace_id is None:
         raise HTTPException(status_code=400, detail="workspace_id is required")
@@ -223,15 +227,19 @@ def get_chat_history(
 
 @router.delete("/history")
 def clear_chat_history(
-    workspace_id: str,
+    workspace_id: str | None = Query(
+        default=GLOBAL_CHAT_WORKSPACE_TOKEN,
+        description="Workspace id/uuid. Leave empty to clear global chat history.",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     service = ChatService(db)
+    requested_workspace = workspace_id or GLOBAL_CHAT_WORKSPACE_TOKEN
     resolved_workspace_id = service.resolve_workspace_db_id(
-        workspace_id,
+        requested_workspace,
         user_id=str(current_user.id),
-        create_if_missing=(workspace_id or "").strip() == GLOBAL_CHAT_WORKSPACE_TOKEN,
+        create_if_missing=requested_workspace.strip() == GLOBAL_CHAT_WORKSPACE_TOKEN,
     )
     if resolved_workspace_id is None:
         raise HTTPException(status_code=400, detail="workspace_id is required")
