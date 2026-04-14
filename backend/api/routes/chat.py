@@ -56,7 +56,10 @@ def _extract_email_address(text: str) -> str | None:
 
 def _looks_like_send_email_command(text: str) -> bool:
     lowered = (text or "").strip().lower()
-    return lowered.startswith("send email") or lowered.startswith("email ")
+    return bool(
+        re.match(r"^(please\s+)?send\s+(an?\s+)?email\b", lowered)
+        or lowered.startswith("email ")
+    )
 
 
 def _build_chat_response_from_router(
