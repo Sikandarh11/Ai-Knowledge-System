@@ -47,6 +47,18 @@ axiosInstance.interceptors.response.use(
     return response
   },
   (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('token_type')
+      localStorage.removeItem('last_activity_at')
+      window.dispatchEvent(new Event('auth-changed'))
+
+      // Force navigation to login when session is invalid/expired.
+      if (window.location.pathname !== '/auth') {
+        window.location.assign('/auth')
+      }
+    }
+
     // Log errors clearly in console for debugging
     console.error(`❌ API Error: ${error.response?.status} ${error.config?.url}`)
     return Promise.reject(error)

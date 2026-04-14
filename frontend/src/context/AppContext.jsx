@@ -124,7 +124,9 @@ export const AppProvider = ({ children }) => {
         }
       }
     } catch (err) {
-      toast.error('Failed to load workspaces')
+      if (err?.response?.status !== 401) {
+        toast.error('Failed to load workspaces')
+      }
     } finally {
       setWorkspacesLoading(false)
     }

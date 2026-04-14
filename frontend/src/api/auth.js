@@ -26,6 +26,7 @@ export const loginUser = async (email, password) => {
 export const persistToken = ({ access_token, token_type }) => {
   localStorage.setItem('access_token', access_token)
   localStorage.setItem('token_type', token_type || 'bearer')
+  localStorage.setItem('last_activity_at', String(Date.now()))
   window.dispatchEvent(new Event('auth-changed'))
 }
 
