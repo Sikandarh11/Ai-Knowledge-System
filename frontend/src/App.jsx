@@ -530,7 +530,7 @@ const ProtectedRoute = ({ children }) => {
 
 const PublicAuthRoute = ({ children }) => {
   if (hasAuthToken()) {
-    return <Navigate to="/chat?scope=global" replace />
+    return <Navigate to="/" replace />
   }
   return children
 }
