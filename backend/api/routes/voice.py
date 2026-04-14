@@ -1,6 +1,10 @@
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
-from backend.services.voice_service import process_audio, record_and_save_audio
+from backend.services.voice_service import (
+    analyze_audio,
+    execute_intent,
+    record_and_save_audio,
+)
 
 router = APIRouter(prefix="/voice", tags=["voice"])
 
@@ -26,13 +30,41 @@ async def voice_record(
 
 
 @router.post("/process")
-async def voice_process(file: UploadFile = File(...)):
+async def voice_process(
+    file: UploadFile = File(...),
+    approve_action: bool = Query(
+        False,
+        description="If false, only preview transcript/intent. If true, execute the detected action.",
+    ),
+):
     content_type = (file.content_type or "").lower()
     if not content_type.startswith("audio/"):
         raise HTTPException(status_code=400, detail="Invalid file type. Please upload an audio file.")
 
     try:
-        result = await process_audio(file)
+        analysis = await analyze_audio(file)
+        text = analysis.get("text", "")
+        intent = analysis.get("intent", {})
+
+        if not approve_action:
+            return {
+                "type": "voice_preview",
+                "status": "pending_approval",
+                "message": "Transcript and intent extracted. Re-submit with approve_action=true to execute.",
+                "data": {
+                    "transcript": text,
+                    "intent": intent,
+                    "approved": False,
+                },
+            }
+
+        result = await execute_intent(intent, text)
+        if isinstance(result, dict):
+            result["preview"] = {
+                "transcript": text,
+                "intent": intent,
+                "approved": True,
+            }
         return result
     except HTTPException:
         raise

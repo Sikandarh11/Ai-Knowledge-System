@@ -76,3 +76,32 @@ async def process_audio(file) -> dict[str, Any]:
         raise ValueError("Intent router returned an invalid payload.")
 
     return result
+
+
+async def analyze_audio(file) -> dict[str, Any]:
+    text = await transcribe(file)
+    if not text or not str(text).strip():
+        raise ValueError("Transcription returned empty text.")
+
+    intent_json = await extract_intent(text)
+    if not isinstance(intent_json, dict):
+        raise ValueError("Intent extraction returned an invalid payload.")
+
+    return {
+        "text": text,
+        "intent": intent_json,
+    }
+
+
+async def execute_intent(intent_json: dict[str, Any], text: str) -> dict[str, Any]:
+    if not text or not str(text).strip():
+        raise ValueError("Transcription returned empty text.")
+
+    if not isinstance(intent_json, dict):
+        raise ValueError("Intent extraction returned an invalid payload.")
+
+    result = await route_intent(intent_json, text)
+    if not isinstance(result, dict):
+        raise ValueError("Intent router returned an invalid payload.")
+
+    return result
