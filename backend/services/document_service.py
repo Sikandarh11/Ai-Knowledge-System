@@ -26,7 +26,6 @@ class DocumentService:
             file_type="txt",
             chunk_count=1 if content.strip() else 0,
         )
-
         try:
             embedding = self._embedder.embed_text(document.content)
             self._store.add_documents(
@@ -45,7 +44,6 @@ class DocumentService:
         except Exception:
             # Vector indexing must not block relational persistence.
             pass
-
         return document
 
     def delete_document(self, document_id: int) -> bool:
