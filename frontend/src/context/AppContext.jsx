@@ -8,6 +8,7 @@
 
 import { createContext, useContext, useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
+import { getCurrentUser } from '../api/auth'
 import {
   getWorkspaces,
   createWorkspace,
@@ -17,6 +18,8 @@ import {
 // ─── Create the context ───────────────────────────
 // This is the "storage box" all components can access
 const AppContext = createContext(null)
+
+const getLastWorkspaceKey = (userId) => `last_active_workspace:${userId || 'anonymous'}`
 
 // ─── Provider component ───────────────────────────
 // Wraps the entire app in App.jsx
@@ -33,13 +36,80 @@ export const AppProvider = ({ children }) => {
   // Shared across Sidebar, Documents, Chat
   // 🔌 BACKEND: id used in API calls as workspace_id
   const [activeWorkspace, setActiveWorkspace] = useState(null)
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('access_token'))
+  const [currentUser, setCurrentUser] = useState(null)
 
-  // ── Fetch workspaces on app load ─────────────────
-  // Runs ONCE when app starts — not per page
+  // Keep token state in sync when login/logout changes localStorage.
+  useEffect(() => {
+    const syncToken = () => setAuthToken(localStorage.getItem('access_token'))
+
+    window.addEventListener('storage', syncToken)
+    window.addEventListener('auth-changed', syncToken)
+
+    return () => {
+      window.removeEventListener('storage', syncToken)
+      window.removeEventListener('auth-changed', syncToken)
+    }
+  }, [])
+
+  // ── Fetch workspaces when authenticated ──────────
   // 🔌 BACKEND: GET /workspaces
   useEffect(() => {
+    if (!authToken) {
+      setWorkspaces([])
+      setActiveWorkspace(null)
+      setCurrentUser(null)
+      setWorkspacesLoading(false)
+      return
+    }
+
+    fetchCurrentUser()
     fetchWorkspaces()
-  }, [])
+  }, [authToken])
+
+  useEffect(() => {
+    if (!currentUser?.id || !activeWorkspace?.id) {
+      return
+    }
+
+    try {
+      localStorage.setItem(getLastWorkspaceKey(currentUser.id), String(activeWorkspace.id))
+    } catch {
+      // Persisting the last workspace should never block the UI.
+    }
+  }, [currentUser?.id, activeWorkspace?.id])
+
+  useEffect(() => {
+    if (!currentUser?.id || workspacesLoading || activeWorkspace || workspaces.length === 0) {
+      return
+    }
+
+    try {
+      const savedWorkspaceId = localStorage.getItem(getLastWorkspaceKey(currentUser.id))
+      if (savedWorkspaceId) {
+        const restoredWorkspace = workspaces.find(
+          (workspace) => String(workspace.id) === String(savedWorkspaceId)
+        )
+        if (restoredWorkspace) {
+          setActiveWorkspace(restoredWorkspace)
+          return
+        }
+      }
+    } catch {
+      // Ignore storage errors and fall back to first workspace.
+    }
+
+    setActiveWorkspace(workspaces[0])
+  }, [currentUser?.id, workspacesLoading, workspaces, activeWorkspace])
+
+  const fetchCurrentUser = async () => {
+    try {
+      const data = await getCurrentUser()
+      setCurrentUser(data)
+    } catch (err) {
+      setCurrentUser(null)
+    }
+  }
 
   const fetchWorkspaces = async () => {
     try {
@@ -47,12 +117,16 @@ export const AppProvider = ({ children }) => {
       const data = await getWorkspaces()
       setWorkspaces(data)
 
-      // Auto select first workspace if none selected
-      if (data.length > 0 && !activeWorkspace) {
-        setActiveWorkspace(data[0])
+      if (activeWorkspace) {
+        const refreshedActive = data.find((workspace) => workspace.id === activeWorkspace.id)
+        if (refreshedActive) {
+          setActiveWorkspace(refreshedActive)
+        }
       }
     } catch (err) {
-      toast.error('Failed to load workspaces')
+      if (err?.response?.status !== 401) {
+        toast.error('Failed to load workspaces')
+      }
     } finally {
       setWorkspacesLoading(false)
     }
@@ -98,12 +172,14 @@ export const AppProvider = ({ children }) => {
     workspaces,             // all workspaces array
     workspacesLoading,      // true while fetching
     activeWorkspace,        // currently selected workspace
+    currentUser,            // logged in user profile
 
     // Actions
     setActiveWorkspace,     // select a workspace
     createWorkspace: handleCreateWorkspace,
     deleteWorkspace: handleDeleteWorkspace,
     refreshWorkspaces: fetchWorkspaces,
+    refreshCurrentUser: fetchCurrentUser,
   }
 
   return (

@@ -8,7 +8,6 @@
 __pycache__/
 *.pyc
 *.pyo
-/test
 /features
 # Virtual environments
 .venv/
@@ -19,4 +18,5 @@ Sikvenv/
 .vscode/
 .idea/
 /chroma_db
-
+*.ipynb
+/backend/test/saved_audio

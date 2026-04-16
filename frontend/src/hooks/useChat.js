@@ -6,11 +6,73 @@
 // const { messages, send, clear, loading } = useChat(workspaceId)
 // 🔌 BACKEND: send() calls POST /chat
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
-import { sendChatMessage } from '../api/chat'
+import { clearChatHistory, getChatHistory, sendChatMessage } from '../api/chat'
 
-const useChat = (workspaceId) => {
+const normalizeHistoryMessage = (message) => ({
+  id: message.id,
+  role: message.role,
+  content: message.content,
+  sources: message.sources || [],
+  timestamp: message.created_at ? new Date(message.created_at) : new Date(),
+})
+
+const normalizeMessageList = (value) => {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value.filter((message) => {
+    return (
+      message
+      && typeof message === 'object'
+      && typeof message.role === 'string'
+      && typeof message.content === 'string'
+    )
+  })
+}
+
+const buildCacheKey = (userId) => `chat_histories:${userId || 'anonymous'}`
+
+const readCachedHistories = (userId) => {
+  if (typeof window === 'undefined') {
+    return {}
+  }
+
+  try {
+    const raw = sessionStorage.getItem(buildCacheKey(userId))
+    if (!raw) {
+      return {}
+    }
+
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') {
+      return {}
+    }
+
+    return Object.entries(parsed).reduce((acc, [key, value]) => {
+      acc[key] = normalizeMessageList(value)
+      return acc
+    }, {})
+  } catch {
+    return {}
+  }
+}
+
+const writeCachedHistories = (userId, histories) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    sessionStorage.setItem(buildCacheKey(userId), JSON.stringify(histories))
+  } catch {
+    // Cache failures should never block chat.
+  }
+}
+
+const useChat = (workspaceId, userId = null) => {
 
   // Stores chat history per workspace
   // { workspaceId: [messages] }
@@ -19,14 +81,69 @@ const useChat = (workspaceId) => {
   const [chatHistories, setChatHistories] = useState({})
   const [loading, setLoading] = useState(false)
 
+  useEffect(() => {
+    setChatHistories(readCachedHistories(userId))
+  }, [userId])
+
+  useEffect(() => {
+    writeCachedHistories(userId, chatHistories)
+  }, [userId, chatHistories])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadWorkspaceHistory = async () => {
+      if (!workspaceId) {
+        return
+      }
+
+      const cachedHistories = readCachedHistories(userId)
+      if (!cancelled && cachedHistories[workspaceId]) {
+        setChatHistories(prev => ({
+          ...prev,
+          [workspaceId]: normalizeMessageList(cachedHistories[workspaceId]),
+        }))
+      }
+
+      try {
+        const history = await getChatHistory(workspaceId)
+        if (cancelled) {
+          return
+        }
+        setChatHistories(prev => ({
+          ...prev,
+          [workspaceId]: normalizeMessageList(history.map(normalizeHistoryMessage)),
+        }))
+      } catch {
+        if (cancelled) {
+          return
+        }
+        // Keep local state if backend history cannot be loaded.
+        if (!chatHistories[workspaceId]) {
+          setChatHistories(prev => ({
+            ...prev,
+            [workspaceId]: [],
+          }))
+        }
+      }
+    }
+
+    loadWorkspaceHistory()
+
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId])
+
   // Messages for current workspace
-  const messages = chatHistories[workspaceId] || []
+  const messages = normalizeMessageList(chatHistories[workspaceId])
 
   // ── Add message to workspace history ─────────────
   const addMessage = (wsId, message) => {
     setChatHistories(prev => ({
       ...prev,
-      [wsId]: [...(prev[wsId] || []), message],
+      [wsId]: [...normalizeMessageList(prev[wsId]), message],
     }))
   }
 
@@ -34,7 +151,7 @@ const useChat = (workspaceId) => {
   // 🔌 BACKEND: POST /chat { workspace_id, message, history }
   const send = async (text) => {
     if (!workspaceId) {
-      toast.error('No workspace selected')
+      toast.error('No chat target selected')
       return
     }
 
@@ -82,7 +199,15 @@ const useChat = (workspaceId) => {
   }
 
   // ── Clear current workspace chat ──────────────────
-  const clear = () => {
+  const clear = async () => {
+    if (workspaceId) {
+      try {
+        await clearChatHistory(workspaceId)
+      } catch {
+        toast.error('Failed to clear chat history on server')
+      }
+    }
+
     setChatHistories(prev => ({
       ...prev,
       [workspaceId]: [],

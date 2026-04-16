@@ -146,9 +146,20 @@ import { Database, FileText, Trash2, ArrowRight, Calendar } from 'lucide-react'
 
 const WorkspaceCard = ({ workspace, onDelete, onOpen, isDeleting }) => {
 
-  const formatDate = (dateStr) => new Date(dateStr).toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric'
-  })
+  const formatDate = (dateStr) => {
+    if (!dateStr) {
+      return 'N/A'
+    }
+
+    const date = new Date(dateStr)
+    if (Number.isNaN(date.getTime())) {
+      return 'N/A'
+    }
+
+    return date.toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric'
+    })
+  }
 
   return (
     <div className="
@@ -203,7 +214,7 @@ const WorkspaceCard = ({ workspace, onDelete, onOpen, isDeleting }) => {
       {/* 🔌 BACKEND: workspace.doc_count from GET /workspaces */}
       <div className="flex items-center gap-2 bg-dark-600 rounded-xl p-3 border border-dark-500">
         <FileText size={15} className="text-neon-cyan" />
-        <span className="text-slate-300 text-sm">{workspace.doc_count}</span>
+        <span className="text-slate-300 text-sm">{workspace.doc_count ?? 0}</span>
         <span className="text-slate-600 text-sm">documents</span>
       </div>
 

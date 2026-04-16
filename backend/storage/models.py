@@ -24,9 +24,26 @@ class Document(Base):
 
     id = Column(Integer, primary_key=True)
     workspace_id = Column(Integer, ForeignKey("workspaces.id"))
+    filename = Column(String(255), nullable=False, default="document.txt")
+    file_type = Column(String(32), nullable=False, default="txt")
+    chunk_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     content = Column(Text, nullable=False)
 
     workspace = relationship("Workspace", back_populates="documents")
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, index=True)
+    role = Column(String(16), nullable=False)
+    content = Column(Text, nullable=False)
+    sources_json = Column(Text, nullable=True)
+    metadata_json = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class User(Base):
@@ -34,6 +51,7 @@ class User(Base):
 
     id = Column(String(36), primary_key=True, index=True, default=lambda: str(uuid4()))
     email = Column(String(255), unique=True, index=True, nullable=False)
+    username = Column(String(64), unique=True, index=True, nullable=True)
     hashed_password = Column(String(255), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 

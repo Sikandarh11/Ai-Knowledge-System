@@ -19,7 +19,13 @@ class DocumentService:
         self._store = VectorStore(collection_name=self._embedder.collection_name())
 
     def create_document(self, *, workspace_id: int, content: str) -> Document:
-        document = self._repo.create(workspace_id=workspace_id, content=content)
+        document = self._repo.create(
+            workspace_id=workspace_id,
+            content=content,
+            filename="text_input.txt",
+            file_type="txt",
+            chunk_count=1 if content.strip() else 0,
+        )
 
         try:
             embedding = self._embedder.embed_text(document.content)
@@ -69,11 +75,18 @@ class DocumentService:
             if not text.strip():
                 raise HTTPException(status_code=400, detail="Empty document")
 
-            document = self._repo.create(workspace_id=workspace_id, content=text)
-
             chunks = chunk_text(text)
             if not chunks:
                 raise HTTPException(status_code=400, detail="Chunking failed")
+
+            normalized_type = file_type.lstrip(".").lower() or "txt"
+            document = self._repo.create(
+                workspace_id=workspace_id,
+                content=text,
+                filename=filename,
+                file_type=normalized_type,
+                chunk_count=len(chunks),
+            )
 
             embeddings = self._embedder.embed_batch(chunks)
             if len(embeddings) != len(chunks):
@@ -100,6 +113,8 @@ class DocumentService:
             return {
                 "message": "Document uploaded and processed",
                 "document_id": document.id,
+                "filename": document.filename,
+                "file_type": document.file_type,
                 "chunks": len(chunks),
             }
         finally:

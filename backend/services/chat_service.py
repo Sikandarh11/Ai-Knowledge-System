@@ -5,23 +5,47 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.rag.pipeline import RAGService
+from backend.storage.repositories.chat import ChatRepository
 from backend.storage.models import Workspace
 from backend.storage.repositories.document import DocumentRepository
+from backend.storage.repositories.workspace import WorkspaceRepository
+
+
+GLOBAL_CHAT_WORKSPACE_TOKEN = "__global__"
 
 
 class ChatService:
     def __init__(self, db: Session):
         self._db = db
         self._repo = DocumentRepository(db)
+        self._chat_repo = ChatRepository(db)
+        self._workspace_repo = WorkspaceRepository(db)
         self._rag = RAGService()
 
-    def _resolve_workspace_db_id(self, workspace_id: str | None) -> int | None:
+    def resolve_workspace_db_id(
+        self,
+        workspace_id: str | None,
+        *,
+        user_id: str | None = None,
+        create_if_missing: bool = False,
+    ) -> int | None:
         if workspace_id is None:
             return None
 
         value = workspace_id.strip()
         if not value:
             return None
+
+        if value == GLOBAL_CHAT_WORKSPACE_TOKEN:
+            if not user_id:
+                raise ValueError("Global chat requires user context")
+            if create_if_missing:
+                workspace = self._workspace_repo.get_or_create_global_workspace_for_owner(user_id)
+            else:
+                workspace = self._workspace_repo.get_global_workspace_for_owner(user_id)
+            if workspace is None:
+                raise ValueError("Global chat is not initialized for this user")
+            return int(workspace.id)
 
         if value.isdigit():
             return int(value)
@@ -82,7 +106,7 @@ class ChatService:
 
         started_at = time.perf_counter()
         clean_query = query.strip()
-        resolved_workspace_id = self._resolve_workspace_db_id(workspace_id)
+        resolved_workspace_id = self.resolve_workspace_db_id(workspace_id)
         history_lines, _ = self._normalize_history(history)
         has_history = bool(history_lines)
         effective_mode = (mode or ("chat" if has_history else "query")).strip().lower()
@@ -143,3 +167,35 @@ class ChatService:
 
     def chat(self, query: str, history: list[dict] | None = None, workspace_id: str | None = None) -> dict:
         return self.run(query=query, workspace_id=workspace_id, history=history, mode="chat", include_documents=False)
+
+    def save_turn(
+        self,
+        *,
+        user_id: str,
+        workspace_id: int,
+        query: str,
+        answer: str,
+        sources: list[dict] | None = None,
+        metadata: dict | None = None,
+    ) -> None:
+        self._chat_repo.create_message(
+            user_id=user_id,
+            workspace_id=workspace_id,
+            role="user",
+            content=query,
+        )
+        self._chat_repo.create_message(
+            user_id=user_id,
+            workspace_id=workspace_id,
+            role="assistant",
+            content=answer,
+            sources=sources or [],
+            metadata=metadata or {},
+        )
+
+    def get_history(self, *, user_id: str, workspace_id: int, limit: int = 200) -> list[dict]:
+        messages = self._chat_repo.list_messages(user_id=user_id, workspace_id=workspace_id, limit=limit)
+        return [self._chat_repo.serialize_message(message) for message in messages]
+
+    def clear_history(self, *, user_id: str, workspace_id: int) -> int:
+        return self._chat_repo.clear_messages(user_id=user_id, workspace_id=workspace_id)

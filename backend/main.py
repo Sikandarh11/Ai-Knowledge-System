@@ -3,6 +3,7 @@ from uuid import uuid4
 from sqlalchemy import inspect, text
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from backend.storage.database import engine
 from backend.storage.models import Base
 from backend.api.routes import auth, workspaces, documents, query, chat, upload, voice
@@ -151,11 +152,137 @@ def _ensure_contacts_schema() -> None:
         connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_contacts_user_email ON contacts(user_id, email)"))
 
 
+def _ensure_users_schema() -> None:
+    inspector = inspect(engine)
+    if "users" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("users")}
+
+    with engine.begin() as connection:
+        if "username" not in columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN username VARCHAR(64)"))
+
+        # Backfill legacy rows so profile/avatar can render for existing users.
+        # Use email to guarantee uniqueness before adding unique index.
+        connection.execute(
+            text(
+                """
+                UPDATE users
+                SET username = email
+                WHERE username IS NULL OR TRIM(username) = ''
+                """
+            )
+        )
+
+        connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users(username)"))
+
+
+def _ensure_documents_schema() -> None:
+    inspector = inspect(engine)
+    if "documents" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("documents")}
+
+    with engine.begin() as connection:
+        if "filename" not in columns:
+            connection.execute(text("ALTER TABLE documents ADD COLUMN filename VARCHAR(255)"))
+        if "file_type" not in columns:
+            connection.execute(text("ALTER TABLE documents ADD COLUMN file_type VARCHAR(32)"))
+        if "chunk_count" not in columns:
+            connection.execute(text("ALTER TABLE documents ADD COLUMN chunk_count INTEGER"))
+        if "created_at" not in columns:
+            connection.execute(text("ALTER TABLE documents ADD COLUMN created_at DATETIME"))
+
+        connection.execute(
+            text(
+                """
+                UPDATE documents
+                SET filename = 'Document ' || id || '.txt'
+                WHERE filename IS NULL OR TRIM(filename) = ''
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE documents
+                SET file_type = 'txt'
+                WHERE file_type IS NULL OR TRIM(file_type) = ''
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE documents
+                SET chunk_count = CASE
+                    WHEN content IS NULL OR TRIM(content) = '' THEN 0
+                    ELSE ((LENGTH(content) + 799) / 800)
+                END
+                WHERE chunk_count IS NULL OR chunk_count < 0
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE documents
+                SET created_at = CURRENT_TIMESTAMP
+                WHERE created_at IS NULL
+                """
+            )
+        )
+
+
+def _ensure_chat_messages_schema() -> None:
+    inspector = inspect(engine)
+
+    with engine.begin() as connection:
+        if "chat_messages" not in inspector.get_table_names():
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE chat_messages (
+                        id INTEGER PRIMARY KEY,
+                        user_id VARCHAR(36) NOT NULL,
+                        workspace_id INTEGER NOT NULL,
+                        role VARCHAR(16) NOT NULL,
+                        content TEXT NOT NULL,
+                        sources_json TEXT,
+                        metadata_json TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(user_id) REFERENCES users(id),
+                        FOREIGN KEY(workspace_id) REFERENCES workspaces(id)
+                    )
+                    """
+                )
+            )
+        else:
+            columns = {column["name"] for column in inspector.get_columns("chat_messages")}
+
+            if "sources_json" not in columns:
+                connection.execute(text("ALTER TABLE chat_messages ADD COLUMN sources_json TEXT"))
+            if "metadata_json" not in columns:
+                connection.execute(text("ALTER TABLE chat_messages ADD COLUMN metadata_json TEXT"))
+            if "created_at" not in columns:
+                connection.execute(text("ALTER TABLE chat_messages ADD COLUMN created_at DATETIME"))
+                connection.execute(text("UPDATE chat_messages SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"))
+
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_chat_messages_user_id ON chat_messages(user_id)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_chat_messages_workspace_id ON chat_messages(workspace_id)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_chat_messages_created_at ON chat_messages(created_at)"))
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
     _ensure_workspace_schema()
     _ensure_contacts_schema()
+    _ensure_users_schema()
+    _ensure_documents_schema()
+    _ensure_chat_messages_schema()
     yield
 
 
@@ -164,6 +291,17 @@ app = FastAPI(
     description="Backend API for managing workspaces, documents, and RAG-powered chat.",
     version="2.0.0",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(workspaces.router)

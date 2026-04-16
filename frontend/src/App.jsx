@@ -487,14 +487,108 @@
 
 
 
-import { Routes, Route } from 'react-router-dom'
-import { Toaster } from 'react-hot-toast'
+import { useEffect, useRef } from 'react'
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Toaster, toast } from 'react-hot-toast'
 import Layout from './components/layout/Layout'
 import HomePage from './pages/HomePage'
 import DocumentsPage from './pages/DocumentsPage'
 import ChatPage from './pages/ChatPage'
+import AuthPage from './pages/AuthPage'
+import { clearToken } from './api/auth'
+
+const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000
+const LAST_ACTIVITY_KEY = 'last_activity_at'
+
+const hasAuthToken = () => {
+  const token = localStorage.getItem('access_token')
+  if (!token) {
+    return false
+  }
+
+  const lastActivity = Number(localStorage.getItem(LAST_ACTIVITY_KEY))
+  if (!lastActivity) {
+    clearToken()
+    return false
+  }
+
+  if (lastActivity && Date.now() - lastActivity > INACTIVITY_TIMEOUT_MS) {
+    clearToken()
+    localStorage.removeItem(LAST_ACTIVITY_KEY)
+    return false
+  }
+
+  return true
+}
+
+const ProtectedRoute = ({ children }) => {
+  if (!hasAuthToken()) {
+    return <Navigate to="/auth" replace />
+  }
+  return children
+}
+
+const PublicAuthRoute = ({ children }) => {
+  if (hasAuthToken()) {
+    return <Navigate to="/" replace />
+  }
+  return children
+}
 
 function App() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const timeoutRef = useRef(null)
+
+  useEffect(() => {
+    if (!hasAuthToken()) {
+      return
+    }
+
+    const logoutForInactivity = () => {
+      if (!hasAuthToken()) {
+        return
+      }
+
+      clearToken()
+      localStorage.removeItem(LAST_ACTIVITY_KEY)
+      toast.error('Session expired due to inactivity. Please login again.')
+      navigate('/auth', { replace: true })
+    }
+
+    const resetInactivityTimer = () => {
+      localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()))
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
+      timeoutRef.current = setTimeout(logoutForInactivity, INACTIVITY_TIMEOUT_MS)
+    }
+
+    const activityEvents = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart']
+    activityEvents.forEach((eventName) => {
+      window.addEventListener(eventName, resetInactivityTimer, { passive: true })
+    })
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        resetInactivityTimer()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    resetInactivityTimer()
+
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
+      activityEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, resetInactivityTimer)
+      })
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [location.pathname, navigate])
+
   return (
     <>
       <Toaster
@@ -511,23 +605,37 @@ function App() {
         }}
       />
       <Routes>
+        <Route path="/auth" element={
+          <PublicAuthRoute>
+            <AuthPage />
+          </PublicAuthRoute>
+        } />
+
         <Route path="/" element={
-          <Layout title="Home">
-            <HomePage />
-          </Layout>
+          <ProtectedRoute>
+            <Layout title="Home">
+              <HomePage />
+            </Layout>
+          </ProtectedRoute>
         } />
 
         <Route path="/documents" element={
-          <Layout title="Documents">
-            <DocumentsPage />
-          </Layout>
+          <ProtectedRoute>
+            <Layout title="Documents">
+              <DocumentsPage />
+            </Layout>
+          </ProtectedRoute>
         } />
 
         <Route path="/chat" element={
-          <Layout title="Chat">
-            <ChatPage />
-          </Layout>
+          <ProtectedRoute>
+            <Layout title="Chat">
+              <ChatPage />
+            </Layout>
+          </ProtectedRoute>
         } />
+
+        <Route path="*" element={<Navigate to={hasAuthToken() ? '/' : '/auth'} replace />} />
       </Routes>
     </>
   )

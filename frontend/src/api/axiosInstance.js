@@ -28,9 +28,10 @@ const axiosInstance = axios.create({
 // Good place to add auth tokens later
 axiosInstance.interceptors.request.use(
   (config) => {
-    // 🔌 BACKEND: When you add authentication, attach token here:
-    // const token = localStorage.getItem('token')
-    // if (token) config.headers.Authorization = `Bearer ${token}`
+    const token = localStorage.getItem('access_token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
     console.log(`📤 API Request: ${config.method?.toUpperCase()} ${config.url}`)
     return config
   },
@@ -46,6 +47,18 @@ axiosInstance.interceptors.response.use(
     return response
   },
   (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('token_type')
+      localStorage.removeItem('last_activity_at')
+      window.dispatchEvent(new Event('auth-changed'))
+
+      // Force navigation to login when session is invalid/expired.
+      if (window.location.pathname !== '/auth') {
+        window.location.assign('/auth')
+      }
+    }
+
     // Log errors clearly in console for debugging
     console.error(`❌ API Error: ${error.response?.status} ${error.config?.url}`)
     return Promise.reject(error)

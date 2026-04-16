@@ -13,11 +13,12 @@ const ChatWindow = ({
   onSend,    // passed from ChatPage so suggestions can send
 }) => {
   const bottomRef = useRef(null)
+  const safeMessages = Array.isArray(messages) ? messages : []
 
   // Auto scroll to bottom on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, loading])
+  }, [safeMessages, loading])
 
   // Suggested starter questions
   const SUGGESTIONS = [
@@ -30,7 +31,7 @@ const ChatWindow = ({
     <div className="flex-1 overflow-y-auto p-6 space-y-6">
 
       {/* ── Welcome screen (empty chat) ───────────── */}
-      {messages.length === 0 && !loading && (
+      {safeMessages.length === 0 && !loading && (
         <div className="flex flex-col items-center justify-center h-full space-y-4 py-12">
 
           {/* Bot icon */}
@@ -58,7 +59,7 @@ const ChatWindow = ({
             {SUGGESTIONS.map((suggestion) => (
               <button
                 key={suggestion}
-                onClick={() => onSend(suggestion)}
+                onClick={() => typeof onSend === 'function' && onSend(suggestion)}
                 className="
                   flex items-center gap-2 p-3
                   bg-dark-700 rounded-xl
@@ -82,8 +83,8 @@ const ChatWindow = ({
       )}
 
       {/* ── Messages list ─────────────────────────── */}
-      {messages.map((message) => (
-        <ChatMessage key={message.id} message={message} />
+      {safeMessages.map((message, index) => (
+        <ChatMessage key={message?.id ?? `msg-${index}`} message={message} />
       ))}
 
       {/* ── AI thinking indicator ─────────────────── */}
