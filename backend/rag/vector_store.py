@@ -74,10 +74,13 @@ class VectorStore:
             hits.append(
                 {
                     "id": ids[i],
+                    "chunk_id": meta.get("chunk_id") or ids[i],
                     "text": docs[i],
                     "distance": dists[i],
+                    "doc_id": meta.get("doc_id"),
                     "document_id": meta.get("document_id"),
                     "workspace_id": meta.get("workspace_id"),
+                    "chunk_index": meta.get("chunk_index"),
                 }
             )
 
