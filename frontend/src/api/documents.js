@@ -36,9 +36,21 @@ export const uploadDocument = async (workspaceId, file) => {
   formData.append('file', file)
   formData.append('workspace_id', String(workspaceId))
 
-  const response = await axiosInstance.post('/documents/upload', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  })
+  let response
+  try {
+    response = await axiosInstance.post('/documents/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      // Upload can take longer due extraction + chunking + embeddings.
+      timeout: 180000,
+    })
+  } catch (err) {
+    const detail = err?.response?.data?.detail
+    const timeoutMessage = err?.code === 'ECONNABORTED' ? 'Upload timed out. Please try a smaller file or retry.' : ''
+    const message = typeof detail === 'string' && detail.trim()
+      ? detail
+      : (timeoutMessage || err?.message || 'Upload failed. Please try again.')
+    throw new Error(message)
+  }
 
   const ext = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : 'txt'
   return normalizeDocument({
