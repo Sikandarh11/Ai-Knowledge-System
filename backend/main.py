@@ -1,12 +1,19 @@
 from uuid import uuid4
+import logging
+import sys
 
 from sqlalchemy import inspect, text
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from backend.core.config import settings
+from backend.rag.embedder import EmbeddingService
 from backend.storage.database import engine
 from backend.storage.models import Base
 from backend.api.routes import auth, workspaces, documents, query, chat, upload, voice
+
+
+logger = logging.getLogger(__name__)
 
 
 def _ensure_workspace_schema() -> None:
@@ -283,6 +290,14 @@ async def lifespan(_: FastAPI):
     _ensure_users_schema()
     _ensure_documents_schema()
     _ensure_chat_messages_schema()
+
+    embedder = EmbeddingService()
+    logger.info(
+        "Startup runtime: python=%s openai_key_set=%s embedding_provider=%s",
+        sys.executable,
+        bool(settings.OPENAI_API_KEY),
+        embedder.provider,
+    )
     yield
 
 
