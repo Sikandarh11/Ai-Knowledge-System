@@ -12,6 +12,8 @@ import { Upload, File, X, CheckCircle, AlertCircle } from 'lucide-react'
 import Modal from '../ui/Modal'
 import Button from '../ui/Button'
 
+const MAX_DOCUMENT_SIZE_BYTES = 500 * 1024 * 1024
+
 const UploadModal = ({
   isOpen,        // show/hide modal
   onClose,       // close modal function
@@ -22,6 +24,7 @@ const UploadModal = ({
   const [file, setFile] = useState(null)       // selected file
   const [uploading, setUploading] = useState(false)
   const [uploadStatus, setUploadStatus] = useState(null)
+  const [errorMessage, setErrorMessage] = useState('')
   // uploadStatus: null | 'success' | 'error'
 
   // ─── Dropzone config ──────────────────────────────
@@ -29,11 +32,13 @@ const UploadModal = ({
   const onDrop = useCallback((acceptedFiles, rejectedFiles) => {
     if (rejectedFiles.length > 0) {
       setUploadStatus('error')
+      setErrorMessage('Unsupported file type or size exceeds 500MB.')
       return
     }
     // Only take first file
     setFile(acceptedFiles[0])
     setUploadStatus(null)
+    setErrorMessage('')
   }, [])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -45,7 +50,7 @@ const UploadModal = ({
       'text/plain': ['.txt'],
     },
     maxFiles: 1,        // one file at a time
-    maxSize: 10485760,  // 10MB max
+    maxSize: MAX_DOCUMENT_SIZE_BYTES,  // 500MB max
   })
 
   // ─── Handle upload ────────────────────────────────
@@ -54,6 +59,7 @@ const UploadModal = ({
 
     setUploading(true)
     setUploadStatus(null)
+    setErrorMessage('')
 
     try {
       // 🔌 BACKEND: onUpload calls uploadDocument() from api/documents.js
@@ -68,6 +74,7 @@ const UploadModal = ({
       }, 1500)
     } catch (err) {
       setUploadStatus('error')
+      setErrorMessage(err?.message || 'Upload failed. Please try again with a valid file.')
     } finally {
       setUploading(false)
     }
@@ -77,6 +84,7 @@ const UploadModal = ({
   const handleClose = () => {
     setFile(null)
     setUploadStatus(null)
+    setErrorMessage('')
     onClose()
   }
 
@@ -196,7 +204,7 @@ const UploadModal = ({
           <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl">
             <AlertCircle size={16} className="text-red-400" />
             <p className="text-red-400 text-sm">
-              Upload failed. Please try again with a valid file.
+              {errorMessage || 'Upload failed. Please try again with a valid file.'}
             </p>
           </div>
         )}

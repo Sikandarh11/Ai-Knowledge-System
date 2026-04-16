@@ -59,8 +59,12 @@ axiosInstance.interceptors.response.use(
       }
     }
 
-    // Log errors clearly in console for debugging
-    console.error(`❌ API Error: ${error.response?.status} ${error.config?.url}`)
+    // Log errors clearly in console for debugging.
+    const status = error.response?.status
+    const url = error.config?.url
+    const detail = error.response?.data?.detail
+    const message = error.message
+    console.error(`❌ API Error: ${status} ${url} ${detail || message || ''}`)
     return Promise.reject(error)
   }
 )

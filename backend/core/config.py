@@ -2,6 +2,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
+
 try:
     import yaml
 except ImportError:  # pragma: no cover
@@ -90,6 +92,9 @@ _CORE_DIR = Path(__file__).resolve().parent
 _BACKEND_DIR = _CORE_DIR.parent
 _PROJECT_ROOT = _BACKEND_DIR.parent
 
+# Load project .env once so all services can read runtime configuration.
+load_dotenv(_PROJECT_ROOT / ".env")
+
 
 class Settings:
     def __init__(self) -> None:
@@ -125,6 +130,29 @@ class Settings:
         self.JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = _env_int(
             "JWT_ACCESS_TOKEN_EXPIRE_MINUTES",
             _to_int(_get_nested(self._yaml, ["auth", "access_token_expire_minutes"], 60), 60),
+        )
+        self.OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+        self.OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+        # Storage / metadata backends
+        self.STORAGE_PROVIDER: str = os.getenv("STORAGE_PROVIDER", "azure_blob")
+        self.METADATA_STORE: str = os.getenv("METADATA_STORE", "mongodb")
+        self.AZURE_STORAGE_CONNECTION_STRING: str = os.getenv("AZURE_STORAGE_CONNECTION_STRING", "")
+        self.AZURE_STORAGE_CONTAINER_NAME: str = os.getenv("AZURE_STORAGE_CONTAINER_NAME", "")
+        self.MONGODB_URI: str = os.getenv("MONGODB_URI", "")
+        self.MONGODB_DATABASE: str = os.getenv("MONGODB_DATABASE", "ai_knowledge_system")
+        self.MONGODB_DOCUMENTS_COLLECTION: str = os.getenv("MONGODB_DOCUMENTS_COLLECTION", "documents")
+        self.MONGODB_INGESTION_JOBS_COLLECTION: str = os.getenv(
+            "MONGODB_INGESTION_JOBS_COLLECTION",
+            "ingestion_jobs",
+        )
+        self.MONGODB_DOCUMENT_CHUNKS_COLLECTION: str = os.getenv(
+            "MONGODB_DOCUMENT_CHUNKS_COLLECTION",
+            "document_chunks",
+        )
+        self.MONGODB_SERVER_SELECTION_TIMEOUT_MS: int = _env_int(
+            "MONGODB_SERVER_SELECTION_TIMEOUT_MS",
+            5000,
         )
 
         # Paths

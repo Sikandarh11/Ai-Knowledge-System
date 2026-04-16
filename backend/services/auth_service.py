@@ -28,8 +28,12 @@ class AuthService:
         return token, "bearer"
 
     def login(self, *, email: str, password: str) -> tuple[str, str]:
-        normalized_email = email.strip().lower()
-        user = self._repo.get_by_email(normalized_email)
+        # OAuth2PasswordRequestForm uses the "username" field. Accept both
+        # email and username here for compatibility with existing clients.
+        identifier = email.strip()
+        user = self._repo.get_by_email(identifier.lower())
+        if user is None:
+            user = self._repo.get_by_username(identifier)
         if user is None:
             raise ValueError("Invalid email or password")
 
