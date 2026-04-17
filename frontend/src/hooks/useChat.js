@@ -8,7 +8,7 @@
 
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
-import { clearChatHistory, getChatHistory, sendChatMessage } from '../api/chat'
+import { clearChatHistory, getChatHistory, sendChatMessage, sendChatMessageStream } from '../api/chat'
 
 const normalizeHistoryMessage = (message) => ({
   id: message.id,
@@ -147,6 +147,24 @@ const useChat = (workspaceId, userId = null) => {
     }))
   }
 
+  const updateMessage = (wsId, messageId, patch) => {
+    setChatHistories((prev) => {
+      const existing = normalizeMessageList(prev[wsId])
+      return {
+        ...prev,
+        [wsId]: existing.map((message) => {
+          if (message.id !== messageId) {
+            return message
+          }
+          return {
+            ...message,
+            ...patch,
+          }
+        }),
+      }
+    })
+  }
+
   // ── Send message ──────────────────────────────────
   // 🔌 BACKEND: POST /chat { workspace_id, message, history }
   const send = async (text) => {
@@ -163,34 +181,56 @@ const useChat = (workspaceId, userId = null) => {
       timestamp: new Date(),
     }
     addMessage(workspaceId, userMessage)
+    const assistantMessageId = Date.now() + 1
+    addMessage(workspaceId, {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+      sources: [],
+      timestamp: new Date(),
+    })
     setLoading(true)
 
     try {
       // Build history for context
       // 🔌 BACKEND: history enables multi-turn conversation
-      const history = messages.map(m => ({
+      const history = [...messages, userMessage].map(m => ({
         role: m.role,
         content: m.content,
       }))
 
-      // 🔌 BACKEND: POST /chat
-      const response = await sendChatMessage(workspaceId, text, history)
+      let streamedText = ''
+      try {
+        const streamedResponse = await sendChatMessageStream(
+          workspaceId,
+          text,
+          history,
+          (chunk) => {
+            streamedText += chunk
+            updateMessage(workspaceId, assistantMessageId, {
+              content: streamedText,
+            })
+          }
+        )
 
-      const assistantMessage = {
-        id: Date.now() + 1,
-        role: 'assistant',
-        content: response.response,
-        sources: response.sources || [],
-        timestamp: new Date(),
+        updateMessage(workspaceId, assistantMessageId, {
+          content: streamedText || streamedResponse.response,
+          sources: streamedResponse.sources || [],
+        })
+      } catch {
+        // Fallback to non-streaming endpoint when streaming is unavailable.
+        const response = await sendChatMessage(workspaceId, text, history)
+        updateMessage(workspaceId, assistantMessageId, {
+          content: response.response,
+          sources: response.sources || [],
+        })
       }
-      addMessage(workspaceId, assistantMessage)
 
     } catch (err) {
-      addMessage(workspaceId, {
-        id: Date.now() + 1,
+      updateMessage(workspaceId, assistantMessageId, {
         role: 'error',
         content: 'Something went wrong. Please try again.',
-        timestamp: new Date(),
+        sources: [],
       })
       toast.error('Failed to get response')
     } finally {

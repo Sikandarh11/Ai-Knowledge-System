@@ -1,4 +1,5 @@
 from collections import Counter
+from collections.abc import Iterator
 import time
 from uuid import UUID
 
@@ -164,6 +165,87 @@ class ChatService:
                 },
             },
         }
+
+    def run_stream(
+        self,
+        *,
+        query: str,
+        workspace_id: str | None = None,
+        history: list[dict] | None = None,
+        mode: str | None = None,
+        include_documents: bool = False,
+    ) -> Iterator[dict]:
+        if not query or not query.strip():
+            raise ValueError("Query cannot be empty")
+
+        started_at = time.perf_counter()
+        clean_query = query.strip()
+        resolved_workspace_id = self.resolve_workspace_db_id(workspace_id)
+        history_lines, _ = self._normalize_history(history)
+        has_history = bool(history_lines)
+        effective_mode = (mode or ("chat" if has_history else "query")).strip().lower()
+
+        retrieval_query = clean_query
+        conversation_text = "\n".join(history_lines)
+        if conversation_text:
+            retrieval_query = (
+                "You are a helpful assistant.\n\n"
+                "Conversation so far:\n"
+                f"{conversation_text}\n\n"
+                "Question:\n"
+                f"{clean_query}"
+            )
+
+        retrieval_started = time.perf_counter()
+        hits = self._rag.retrieve(retrieval_query, workspace_id=resolved_workspace_id)
+        prompt = self._rag.build_prompt(retrieval_query, hits, conversation=conversation_text)
+        inferred_workspace_id = self._infer_workspace_id(hits, resolved_workspace_id)
+
+        documents = []
+        if include_documents:
+            doc_ids = [
+                int(hit["document_id"])
+                for hit in hits
+                if isinstance(hit.get("document_id"), int)
+            ]
+            if doc_ids:
+                documents = self._repo.get_by_ids(doc_ids, workspace_id=inferred_workspace_id)
+            else:
+                documents = self._repo.search(clean_query, workspace_id=inferred_workspace_id)
+
+        def _event_stream() -> Iterator[dict]:
+            answer_parts: list[str] = []
+            for token in self._rag.generate_answer_stream(prompt):
+                answer_parts.append(token)
+                yield {
+                    "type": "chunk",
+                    "content": token,
+                }
+
+            answer = "".join(answer_parts).strip()
+            total_duration_ms = (time.perf_counter() - started_at) * 1000
+            yield {
+                "type": "final",
+                "payload": {
+                    "query": clean_query,
+                    "answer": answer,
+                    "workspace_id": inferred_workspace_id,
+                    "sources": hits,
+                    "documents": documents,
+                    "used_llm": self._rag.has_api_key,
+                    "metadata": {
+                        "mode": effective_mode,
+                        "retrieved_count": len(hits),
+                        "model_name": self._rag.model_name,
+                        "timings_ms": {
+                            "retrieval_and_generation": round((time.perf_counter() - retrieval_started) * 1000, 2),
+                            "total": round(total_duration_ms, 2),
+                        },
+                    },
+                },
+            }
+
+        return _event_stream()
 
     def chat(self, query: str, history: list[dict] | None = None, workspace_id: str | None = None) -> dict:
         return self.run(query=query, workspace_id=workspace_id, history=history, mode="chat", include_documents=False)
