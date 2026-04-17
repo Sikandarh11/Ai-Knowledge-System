@@ -160,3 +160,36 @@ export const sendChatMessageStream = async (
     sources: (finalPayload.sources || []).map(normalizeSource),
   }
 }
+
+export const uploadVoiceMessage = async (workspaceId, audioBlob, filename = 'voice-message.webm') => {
+  const formData = new FormData()
+  formData.append('workspace_id', workspaceId != null ? String(workspaceId) : '__global__')
+  formData.append('file', audioBlob, filename)
+
+  const response = await axiosInstance.post('/voice/upload', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  })
+
+  const payload = response.data || {}
+  return {
+    messageId: payload?.data?.message_id,
+    status: payload?.data?.voice_status || payload?.status || 'processing',
+    workspaceId: payload?.data?.workspace_id,
+  }
+}
+
+export const getVoiceMessageStatus = async (messageId) => {
+  const response = await axiosInstance.get(`/voice/status/${messageId}`)
+  const payload = response.data || {}
+  const data = payload.data || {}
+
+  return {
+    messageId: data.message_id,
+    status: data.status || 'unknown',
+    transcript: data.transcript || '',
+    error: data.error || null,
+    workspaceId: data.workspace_id,
+  }
+}

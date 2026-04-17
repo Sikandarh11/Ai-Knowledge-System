@@ -8,7 +8,14 @@
 
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
-import { clearChatHistory, getChatHistory, sendChatMessage, sendChatMessageStream } from '../api/chat'
+import {
+  clearChatHistory,
+  getChatHistory,
+  getVoiceMessageStatus,
+  sendChatMessage,
+  sendChatMessageStream,
+  uploadVoiceMessage,
+} from '../api/chat'
 
 const normalizeHistoryMessage = (message) => ({
   id: message.id,
@@ -71,6 +78,10 @@ const writeCachedHistories = (userId, histories) => {
     // Cache failures should never block chat.
   }
 }
+
+const sleep = (ms) => new Promise((resolve) => {
+  window.setTimeout(resolve, ms)
+})
 
 const useChat = (workspaceId, userId = null) => {
 
@@ -238,6 +249,144 @@ const useChat = (workspaceId, userId = null) => {
     }
   }
 
+  const sendVoiceAudio = async (audioBlob, options = {}) => {
+    if (!workspaceId) {
+      toast.error('No chat target selected')
+      return null
+    }
+
+    if (!(audioBlob instanceof Blob)) {
+      toast.error('Invalid audio payload')
+      return null
+    }
+
+    const pendingMessageId = Date.now()
+    const pendingMessage = {
+      id: pendingMessageId,
+      role: 'user',
+      content: 'Voice message (transcribing...)',
+      sources: [],
+      timestamp: new Date(),
+      metadata: {
+        message_type: 'voice',
+        voice: {
+          status: 'uploading',
+          transcript: '',
+          error: null,
+        },
+      },
+    }
+    addMessage(workspaceId, pendingMessage)
+
+    try {
+      const uploadResult = await uploadVoiceMessage(
+        workspaceId,
+        audioBlob,
+        options.filename || 'voice-message.webm'
+      )
+
+      if (!uploadResult?.messageId) {
+        throw new Error('Voice upload did not return message id')
+      }
+
+      updateMessage(workspaceId, pendingMessageId, {
+        metadata: {
+          message_type: 'voice',
+          voice: {
+            status: uploadResult.status || 'processing',
+            transcript: '',
+            error: null,
+            message_id: uploadResult.messageId,
+          },
+        },
+        content: 'Voice message (processing...)',
+      })
+
+      const maxAttempts = options.maxAttempts || 30
+      const pollIntervalMs = options.pollIntervalMs || 2000
+
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        const statusResult = await getVoiceMessageStatus(uploadResult.messageId)
+
+        if (statusResult.status === 'needs_review') {
+          const transcript = statusResult.transcript || ''
+          updateMessage(workspaceId, pendingMessageId, {
+            content: transcript || 'Voice message transcribed.',
+            metadata: {
+              message_type: 'voice',
+              voice: {
+                status: 'needs_review',
+                transcript,
+                error: null,
+                message_id: uploadResult.messageId,
+              },
+            },
+          })
+          return {
+            messageId: uploadResult.messageId,
+            transcript,
+            status: 'needs_review',
+          }
+        }
+
+        if (statusResult.status === 'error') {
+          const errorText = statusResult.error || 'Voice transcription failed.'
+          updateMessage(workspaceId, pendingMessageId, {
+            role: 'error',
+            content: `Voice message failed: ${errorText}`,
+            metadata: {
+              message_type: 'voice',
+              voice: {
+                status: 'error',
+                transcript: '',
+                error: errorText,
+                message_id: uploadResult.messageId,
+              },
+            },
+          })
+          return {
+            messageId: uploadResult.messageId,
+            transcript: '',
+            status: 'error',
+            error: errorText,
+          }
+        }
+
+        updateMessage(workspaceId, pendingMessageId, {
+          content: 'Voice message (processing...)',
+          metadata: {
+            message_type: 'voice',
+            voice: {
+              status: statusResult.status || 'processing',
+              transcript: statusResult.transcript || '',
+              error: statusResult.error || null,
+              message_id: uploadResult.messageId,
+            },
+          },
+        })
+
+        await sleep(pollIntervalMs)
+      }
+
+      throw new Error('Voice transcription timed out. Please retry.')
+    } catch (err) {
+      updateMessage(workspaceId, pendingMessageId, {
+        role: 'error',
+        content: 'Voice processing failed. Please try again.',
+        metadata: {
+          message_type: 'voice',
+          voice: {
+            status: 'error',
+            transcript: '',
+            error: err?.message || 'Voice processing failed.',
+          },
+        },
+      })
+      toast.error('Voice processing failed')
+      return null
+    }
+  }
+
   // ── Clear current workspace chat ──────────────────
   const clear = async () => {
     if (workspaceId) {
@@ -263,6 +412,7 @@ const useChat = (workspaceId, userId = null) => {
     messages,         // current workspace messages
     loading,          // true while waiting for AI
     send,             // send a message
+    sendVoiceAudio,   // upload + poll voice transcription
     clear,            // clear current chat
     getMessageCount,  // message count per workspace
     chatHistories,    // all histories (for dropdown counts)
