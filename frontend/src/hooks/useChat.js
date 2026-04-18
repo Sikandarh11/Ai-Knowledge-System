@@ -260,24 +260,6 @@ const useChat = (workspaceId, userId = null) => {
       return null
     }
 
-    const pendingMessageId = Date.now()
-    const pendingMessage = {
-      id: pendingMessageId,
-      role: 'user',
-      content: 'Voice message (transcribing...)',
-      sources: [],
-      timestamp: new Date(),
-      metadata: {
-        message_type: 'voice',
-        voice: {
-          status: 'uploading',
-          transcript: '',
-          error: null,
-        },
-      },
-    }
-    addMessage(workspaceId, pendingMessage)
-
     try {
       const uploadResult = await uploadVoiceMessage(
         workspaceId,
@@ -289,19 +271,6 @@ const useChat = (workspaceId, userId = null) => {
         throw new Error('Voice upload did not return message id')
       }
 
-      updateMessage(workspaceId, pendingMessageId, {
-        metadata: {
-          message_type: 'voice',
-          voice: {
-            status: uploadResult.status || 'processing',
-            transcript: '',
-            error: null,
-            message_id: uploadResult.messageId,
-          },
-        },
-        content: 'Voice message (processing...)',
-      })
-
       const maxAttempts = options.maxAttempts || 30
       const pollIntervalMs = options.pollIntervalMs || 2000
 
@@ -310,18 +279,6 @@ const useChat = (workspaceId, userId = null) => {
 
         if (statusResult.status === 'needs_review') {
           const transcript = statusResult.transcript || ''
-          updateMessage(workspaceId, pendingMessageId, {
-            content: transcript || 'Voice message transcribed.',
-            metadata: {
-              message_type: 'voice',
-              voice: {
-                status: 'needs_review',
-                transcript,
-                error: null,
-                message_id: uploadResult.messageId,
-              },
-            },
-          })
           return {
             messageId: uploadResult.messageId,
             transcript,
@@ -331,19 +288,6 @@ const useChat = (workspaceId, userId = null) => {
 
         if (statusResult.status === 'error') {
           const errorText = statusResult.error || 'Voice transcription failed.'
-          updateMessage(workspaceId, pendingMessageId, {
-            role: 'error',
-            content: `Voice message failed: ${errorText}`,
-            metadata: {
-              message_type: 'voice',
-              voice: {
-                status: 'error',
-                transcript: '',
-                error: errorText,
-                message_id: uploadResult.messageId,
-              },
-            },
-          })
           return {
             messageId: uploadResult.messageId,
             transcript: '',
@@ -352,36 +296,11 @@ const useChat = (workspaceId, userId = null) => {
           }
         }
 
-        updateMessage(workspaceId, pendingMessageId, {
-          content: 'Voice message (processing...)',
-          metadata: {
-            message_type: 'voice',
-            voice: {
-              status: statusResult.status || 'processing',
-              transcript: statusResult.transcript || '',
-              error: statusResult.error || null,
-              message_id: uploadResult.messageId,
-            },
-          },
-        })
-
         await sleep(pollIntervalMs)
       }
 
       throw new Error('Voice transcription timed out. Please retry.')
     } catch (err) {
-      updateMessage(workspaceId, pendingMessageId, {
-        role: 'error',
-        content: 'Voice processing failed. Please try again.',
-        metadata: {
-          message_type: 'voice',
-          voice: {
-            status: 'error',
-            transcript: '',
-            error: err?.message || 'Voice processing failed.',
-          },
-        },
-      })
       toast.error('Voice processing failed')
       return null
     }

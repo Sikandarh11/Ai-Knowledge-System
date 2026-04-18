@@ -34,6 +34,14 @@ const ChatMessage = ({ message }) => {
   const contentText = typeof safeMessage.content === 'string' ? safeMessage.content : ''
   const sources = Array.isArray(safeMessage.sources) ? safeMessage.sources : []
   const timestampLabel = formatMessageTimestamp(safeMessage.timestamp)
+  const metadata = safeMessage.metadata && typeof safeMessage.metadata === 'object'
+    ? safeMessage.metadata
+    : {}
+  const voiceMeta = metadata.voice && typeof metadata.voice === 'object'
+    ? metadata.voice
+    : {}
+  const isVoiceMessage = metadata.message_type === 'voice' || Boolean(voiceMeta.status)
+  const voiceStatus = voiceMeta.status || ''
 
   // message shape:
   // {
@@ -46,6 +54,7 @@ const ChatMessage = ({ message }) => {
 
   const isUser = safeMessage.role === 'user'
   const isError = safeMessage.role === 'error'
+  const showVoiceProcessing = isVoiceMessage && isUser && voiceStatus && voiceStatus !== 'sent'
 
   return (
     <div className={`
@@ -89,7 +98,12 @@ const ChatMessage = ({ message }) => {
             : 'bg-dark-700 border border-dark-500 text-slate-200 rounded-tl-sm'
           }
         `}>
-          {isUser ? (
+          {showVoiceProcessing ? (
+            <div className="space-y-1">
+              <p>{contentText || 'Voice message processing...'}</p>
+              <p className="text-xs text-white/75">Status: {voiceStatus}</p>
+            </div>
+          ) : isUser ? (
             // User messages — plain text
             <p>{contentText}</p>
           ) : (
