@@ -107,6 +107,13 @@ async def route_intent(intent_json: dict, raw_text: str) -> dict:
             body_value = params.get("body")
             user_id = params.get("user_id") or "default-user"
 
+            # LLM extraction can miss required fields even when raw text has them.
+            # Recover obvious values from the original user message before failing.
+            if not recipient_name:
+                recipient_name = _extract_first_email(raw_text)
+            if not body_value:
+                body_value = raw_text
+
             missing_fields: list[str] = []
             if not recipient_name:
                 missing_fields.append("recipient_name")

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.agents.email_agent import EmailCommandAgent
 from backend.core.auth import get_current_user
+from backend.services.intent_service import extract_intent, IntentExtractionError
 from backend.services.router_service import route_intent
 from backend.services.chat_service import ChatService, GLOBAL_CHAT_WORKSPACE_TOKEN
 from backend.services.email_service import send_email_service
@@ -84,6 +85,27 @@ def _build_chat_response_from_router(
     )
 
 
+def _should_route_via_agent(intent_json: dict | None) -> bool:
+    if not isinstance(intent_json, dict):
+        return False
+    intent = str(intent_json.get("intent") or "").strip().lower()
+    return intent in {"schedule", "send_email", "workspace", "query"}
+
+
+async def _route_text_if_needed(query_text: str) -> dict | None:
+    try:
+        intent_json = await extract_intent(query_text)
+    except IntentExtractionError:
+        return None
+    except Exception:
+        return None
+
+    if not _should_route_via_agent(intent_json):
+        return None
+
+    return await route_intent(intent_json, query_text)
+
+
 def _to_sse(data: dict, event: str | None = None) -> str:
     payload = json.dumps(data, ensure_ascii=True)
     if event:
@@ -135,6 +157,36 @@ async def chat(
 
         route_result = await route_intent(intent_json, query_text)
 
+        workspace_int: int | None = None
+        if payload.workspace_id and payload.workspace_id.strip().isdigit():
+            workspace_int = int(payload.workspace_id.strip())
+
+        chat_response = _build_chat_response_from_router(
+            query=query_text,
+            route_result=route_result,
+            workspace_id=None if is_global_chat else workspace_int,
+        )
+
+        storage_workspace_id = service.resolve_workspace_db_id(
+            payload.workspace_id,
+            user_id=user_id,
+            create_if_missing=is_global_chat,
+        )
+        if storage_workspace_id is None:
+            storage_workspace_id = chat_response.workspace_id
+        if storage_workspace_id is not None:
+            service.save_turn(
+                user_id=user_id,
+                workspace_id=storage_workspace_id,
+                query=query_text,
+                answer=chat_response.answer,
+                sources=[],
+                metadata=chat_response.metadata,
+            )
+        return chat_response
+
+    route_result = await _route_text_if_needed(query_text)
+    if route_result is not None:
         workspace_int: int | None = None
         if payload.workspace_id and payload.workspace_id.strip().isdigit():
             workspace_int = int(payload.workspace_id.strip())
@@ -251,6 +303,54 @@ async def chat_stream(
 
         route_result = await route_intent(intent_json, query_text)
 
+        workspace_int: int | None = None
+        if payload.workspace_id and payload.workspace_id.strip().isdigit():
+            workspace_int = int(payload.workspace_id.strip())
+
+        chat_response = _build_chat_response_from_router(
+            query=query_text,
+            route_result=route_result,
+            workspace_id=None if is_global_chat else workspace_int,
+        )
+
+        storage_workspace_id = service.resolve_workspace_db_id(
+            payload.workspace_id,
+            user_id=user_id,
+            create_if_missing=is_global_chat,
+        )
+        if storage_workspace_id is None:
+            storage_workspace_id = chat_response.workspace_id
+        if storage_workspace_id is not None:
+            service.save_turn(
+                user_id=user_id,
+                workspace_id=storage_workspace_id,
+                query=query_text,
+                answer=chat_response.answer,
+                sources=[],
+                metadata=chat_response.metadata,
+            )
+
+        def _single_event_stream():
+            yield _to_sse({"type": "chunk", "content": chat_response.answer})
+            yield _to_sse(
+                {
+                    "type": "final",
+                    "payload": {
+                        "query": chat_response.query,
+                        "answer": chat_response.answer,
+                        "workspace_id": chat_response.workspace_id,
+                        "sources": [],
+                        "documents": None,
+                        "used_llm": chat_response.used_llm,
+                        "metadata": chat_response.metadata,
+                    },
+                }
+            )
+
+        return StreamingResponse(_single_event_stream(), media_type="text/event-stream")
+
+    route_result = await _route_text_if_needed(query_text)
+    if route_result is not None:
         workspace_int: int | None = None
         if payload.workspace_id and payload.workspace_id.strip().isdigit():
             workspace_int = int(payload.workspace_id.strip())
