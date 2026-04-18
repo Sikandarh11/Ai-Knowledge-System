@@ -31,11 +31,13 @@ const normalizeMessageList = (value) => {
   }
 
   return value.filter((message) => {
+    const content = typeof message?.content === 'string' ? message.content.trim() : ''
     return (
       message
       && typeof message === 'object'
       && typeof message.role === 'string'
       && typeof message.content === 'string'
+      && content.length > 0
     )
   })
 }
@@ -179,8 +181,13 @@ const useChat = (workspaceId, userId = null) => {
   // ── Send message ──────────────────────────────────
   // 🔌 BACKEND: POST /chat { workspace_id, message, history }
   const send = async (text) => {
+    const cleanText = typeof text === 'string' ? text.trim() : ''
     if (!workspaceId) {
       toast.error('No chat target selected')
+      return
+    }
+
+    if (!cleanText) {
       return
     }
 
@@ -188,19 +195,38 @@ const useChat = (workspaceId, userId = null) => {
     const userMessage = {
       id: Date.now(),
       role: 'user',
-      content: text,
+      content: cleanText,
       timestamp: new Date(),
     }
     addMessage(workspaceId, userMessage)
-    const assistantMessageId = Date.now() + 1
-    addMessage(workspaceId, {
-      id: assistantMessageId,
-      role: 'assistant',
-      content: '',
-      sources: [],
-      timestamp: new Date(),
-    })
     setLoading(true)
+
+    let assistantMessageId = null
+    const upsertAssistantMessage = (content, sources = []) => {
+      const finalContent = typeof content === 'string' ? content : ''
+      if (!finalContent.trim()) {
+        return null
+      }
+
+      if (assistantMessageId == null) {
+        assistantMessageId = Date.now() + 1
+        addMessage(workspaceId, {
+          id: assistantMessageId,
+          role: 'assistant',
+          content: finalContent,
+          sources,
+          timestamp: new Date(),
+        })
+        return assistantMessageId
+      }
+
+      updateMessage(workspaceId, assistantMessageId, {
+        content: finalContent,
+        sources,
+      })
+
+      return assistantMessageId
+    }
 
     try {
       // Build history for context
@@ -214,35 +240,44 @@ const useChat = (workspaceId, userId = null) => {
       try {
         const streamedResponse = await sendChatMessageStream(
           workspaceId,
-          text,
+          cleanText,
           history,
           (chunk) => {
             streamedText += chunk
-            updateMessage(workspaceId, assistantMessageId, {
-              content: streamedText,
-            })
+            upsertAssistantMessage(streamedText)
           }
         )
 
-        updateMessage(workspaceId, assistantMessageId, {
-          content: streamedText || streamedResponse.response,
-          sources: streamedResponse.sources || [],
-        })
+        const finalAssistantContent = streamedText || streamedResponse.response || ''
+
+        if (!upsertAssistantMessage(finalAssistantContent, streamedResponse.sources || [])) {
+          throw new Error('No AI response received from stream')
+        }
       } catch {
         // Fallback to non-streaming endpoint when streaming is unavailable.
-        const response = await sendChatMessage(workspaceId, text, history)
-        updateMessage(workspaceId, assistantMessageId, {
-          content: response.response,
-          sources: response.sources || [],
-        })
+        const response = await sendChatMessage(workspaceId, cleanText, history)
+
+        if (!upsertAssistantMessage(response.response, response.sources || [])) {
+          throw new Error('No AI response received from chat endpoint')
+        }
       }
 
     } catch (err) {
-      updateMessage(workspaceId, assistantMessageId, {
-        role: 'error',
-        content: 'Something went wrong. Please try again.',
-        sources: [],
-      })
+      if (assistantMessageId != null) {
+        updateMessage(workspaceId, assistantMessageId, {
+          role: 'error',
+          content: 'Something went wrong. Please try again.',
+          sources: [],
+        })
+      } else {
+        addMessage(workspaceId, {
+          id: Date.now() + 1,
+          role: 'error',
+          content: 'Something went wrong. Please try again.',
+          sources: [],
+          timestamp: new Date(),
+        })
+      }
       toast.error('Failed to get response')
     } finally {
       setLoading(false)
