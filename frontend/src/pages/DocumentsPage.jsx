@@ -97,7 +97,8 @@ const DocumentsPage = () => {
       await refreshWorkspaces()
       toast.success(`"${file.name}" uploaded successfully!`)
     } catch (err) {
-      toast.error('Upload failed. Try again.')
+      const message = err?.message || 'Upload failed. Try again.'
+      toast.error(message)
       throw err // re-throw so modal shows error state
     }
   }

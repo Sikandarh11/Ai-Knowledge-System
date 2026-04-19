@@ -1,10 +1,11 @@
 import os
 import tempfile
-import shutil
 from fastapi import UploadFile, HTTPException
 from backend.ingestion.loaders import detect_file_type
 
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt"}
+MAX_DOCUMENT_SIZE_BYTES = 500 * 1024 * 1024
+READ_CHUNK_SIZE = 1024 * 1024
 
 
 async def handle_upload(file: UploadFile) -> dict:
@@ -35,10 +36,31 @@ async def handle_upload(file: UploadFile) -> dict:
     tmp_dir  = tempfile.mkdtemp(prefix="workspace_upload_")
     tmp_path = os.path.join(tmp_dir, filename)
 
+    written = 0
     try:
         with open(tmp_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            while True:
+                chunk = file.file.read(READ_CHUNK_SIZE)
+                if not chunk:
+                    break
+
+                written += len(chunk)
+                if written > MAX_DOCUMENT_SIZE_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail="File too large. Maximum allowed size is 500MB.",
+                    )
+
+                buffer.write(chunk)
     except Exception as exc:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        if os.path.isdir(tmp_dir):
+            os.rmdir(tmp_dir)
+
+        if isinstance(exc, HTTPException):
+            raise
+
         raise HTTPException(
             status_code=500,
             detail=f"Failed to save uploaded file: {str(exc)}",
