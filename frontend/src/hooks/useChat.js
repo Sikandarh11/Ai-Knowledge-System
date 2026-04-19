@@ -8,7 +8,14 @@
 
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
-import { clearChatHistory, getChatHistory, sendChatMessage } from '../api/chat'
+import {
+  clearChatHistory,
+  getChatHistory,
+  getVoiceMessageStatus,
+  sendChatMessage,
+  sendChatMessageStream,
+  uploadVoiceMessage,
+} from '../api/chat'
 
 const normalizeHistoryMessage = (message) => ({
   id: message.id,
@@ -24,11 +31,13 @@ const normalizeMessageList = (value) => {
   }
 
   return value.filter((message) => {
+    const content = typeof message?.content === 'string' ? message.content.trim() : ''
     return (
       message
       && typeof message === 'object'
       && typeof message.role === 'string'
       && typeof message.content === 'string'
+      && content.length > 0
     )
   })
 }
@@ -71,6 +80,10 @@ const writeCachedHistories = (userId, histories) => {
     // Cache failures should never block chat.
   }
 }
+
+const sleep = (ms) => new Promise((resolve) => {
+  window.setTimeout(resolve, ms)
+})
 
 const useChat = (workspaceId, userId = null) => {
 
@@ -147,11 +160,34 @@ const useChat = (workspaceId, userId = null) => {
     }))
   }
 
+  const updateMessage = (wsId, messageId, patch) => {
+    setChatHistories((prev) => {
+      const existing = normalizeMessageList(prev[wsId])
+      return {
+        ...prev,
+        [wsId]: existing.map((message) => {
+          if (message.id !== messageId) {
+            return message
+          }
+          return {
+            ...message,
+            ...patch,
+          }
+        }),
+      }
+    })
+  }
+
   // ── Send message ──────────────────────────────────
   // 🔌 BACKEND: POST /chat { workspace_id, message, history }
   const send = async (text) => {
+    const cleanText = typeof text === 'string' ? text.trim() : ''
     if (!workspaceId) {
       toast.error('No chat target selected')
+      return
+    }
+
+    if (!cleanText) {
       return
     }
 
@@ -159,42 +195,149 @@ const useChat = (workspaceId, userId = null) => {
     const userMessage = {
       id: Date.now(),
       role: 'user',
-      content: text,
+      content: cleanText,
       timestamp: new Date(),
     }
     addMessage(workspaceId, userMessage)
     setLoading(true)
 
+    let assistantMessageId = null
+    const upsertAssistantMessage = (content, sources = []) => {
+      const finalContent = typeof content === 'string' ? content : ''
+      if (!finalContent.trim()) {
+        return null
+      }
+
+      if (assistantMessageId == null) {
+        assistantMessageId = Date.now() + 1
+        addMessage(workspaceId, {
+          id: assistantMessageId,
+          role: 'assistant',
+          content: finalContent,
+          sources,
+          timestamp: new Date(),
+        })
+        return assistantMessageId
+      }
+
+      updateMessage(workspaceId, assistantMessageId, {
+        content: finalContent,
+        sources,
+      })
+
+      return assistantMessageId
+    }
+
     try {
       // Build history for context
       // 🔌 BACKEND: history enables multi-turn conversation
-      const history = messages.map(m => ({
+      const history = [...messages, userMessage].map(m => ({
         role: m.role,
         content: m.content,
       }))
 
-      // 🔌 BACKEND: POST /chat
-      const response = await sendChatMessage(workspaceId, text, history)
+      let streamedText = ''
+      try {
+        const streamedResponse = await sendChatMessageStream(
+          workspaceId,
+          cleanText,
+          history,
+          (chunk) => {
+            streamedText += chunk
+            upsertAssistantMessage(streamedText)
+          }
+        )
 
-      const assistantMessage = {
-        id: Date.now() + 1,
-        role: 'assistant',
-        content: response.response,
-        sources: response.sources || [],
-        timestamp: new Date(),
+        const finalAssistantContent = streamedText || streamedResponse.response || ''
+
+        if (!upsertAssistantMessage(finalAssistantContent, streamedResponse.sources || [])) {
+          throw new Error('No AI response received from stream')
+        }
+      } catch {
+        // Fallback to non-streaming endpoint when streaming is unavailable.
+        const response = await sendChatMessage(workspaceId, cleanText, history)
+
+        if (!upsertAssistantMessage(response.response, response.sources || [])) {
+          throw new Error('No AI response received from chat endpoint')
+        }
       }
-      addMessage(workspaceId, assistantMessage)
 
     } catch (err) {
-      addMessage(workspaceId, {
-        id: Date.now() + 1,
-        role: 'error',
-        content: 'Something went wrong. Please try again.',
-        timestamp: new Date(),
-      })
+      if (assistantMessageId != null) {
+        updateMessage(workspaceId, assistantMessageId, {
+          role: 'error',
+          content: 'Something went wrong. Please try again.',
+          sources: [],
+        })
+      } else {
+        addMessage(workspaceId, {
+          id: Date.now() + 1,
+          role: 'error',
+          content: 'Something went wrong. Please try again.',
+          sources: [],
+          timestamp: new Date(),
+        })
+      }
       toast.error('Failed to get response')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const sendVoiceAudio = async (audioBlob, options = {}) => {
+    if (!workspaceId) {
+      toast.error('No chat target selected')
+      return null
+    }
+
+    if (!(audioBlob instanceof Blob)) {
+      toast.error('Invalid audio payload')
+      return null
+    }
+
+    try {
+      const uploadResult = await uploadVoiceMessage(
+        workspaceId,
+        audioBlob,
+        options.filename || 'voice-message.webm'
+      )
+
+      if (!uploadResult?.messageId) {
+        throw new Error('Voice upload did not return message id')
+      }
+
+      const maxAttempts = options.maxAttempts || 30
+      const pollIntervalMs = options.pollIntervalMs || 2000
+
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        const statusResult = await getVoiceMessageStatus(uploadResult.messageId)
+
+        if (statusResult.status === 'needs_review') {
+          const transcript = statusResult.transcript || ''
+          return {
+            messageId: uploadResult.messageId,
+            transcript,
+            status: 'needs_review',
+          }
+        }
+
+        if (statusResult.status === 'error') {
+          const errorText = statusResult.error || 'Voice transcription failed.'
+          return {
+            messageId: uploadResult.messageId,
+            transcript: '',
+            status: 'error',
+            error: errorText,
+          }
+        }
+
+        await sleep(pollIntervalMs)
+      }
+
+      throw new Error('Voice transcription timed out. Please retry.')
+    } catch (err) {
+      toast.error('Voice processing failed')
+      return null
     }
   }
 
@@ -223,6 +366,7 @@ const useChat = (workspaceId, userId = null) => {
     messages,         // current workspace messages
     loading,          // true while waiting for AI
     send,             // send a message
+    sendVoiceAudio,   // upload + poll voice transcription
     clear,            // clear current chat
     getMessageCount,  // message count per workspace
     chatHistories,    // all histories (for dropdown counts)

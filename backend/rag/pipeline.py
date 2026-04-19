@@ -1,4 +1,5 @@
 import os
+from collections.abc import Iterator
 
 from backend.rag.retriever import Retriever
 
@@ -34,6 +35,10 @@ class RAGService:
     def model_name(self) -> str:
         return self._model_name
 
+    @property
+    def has_api_key(self) -> bool:
+        return bool(self._api_key)
+
     def retrieve(self, query: str, workspace_id: int | None = None) -> list[dict]:
         return self._retriever.retrieve(query, workspace_id=workspace_id)
 
@@ -61,9 +66,30 @@ class RAGService:
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
             )
-            return response.choices[0].message.content.strip()
+            content = response.choices[0].message.content
+            return content.strip() if isinstance(content, str) else ""
         except Exception as exc:
             return self._fallback_answer(prompt, error=str(exc))
+
+    def generate_answer_stream(self, prompt: str) -> Iterator[str]:
+        if not self._api_key:
+            yield self._fallback_answer(prompt)
+            return
+
+        try:
+            client = self._get_openai_client()
+            stream = client.chat.completions.create(
+                model=self._model_name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2,
+                stream=True,
+            )
+            for chunk in stream:
+                delta = chunk.choices[0].delta.content if chunk.choices else None
+                if delta:
+                    yield delta
+        except Exception as exc:
+            yield self._fallback_answer(prompt, error=str(exc))
 
     def run(
         self,

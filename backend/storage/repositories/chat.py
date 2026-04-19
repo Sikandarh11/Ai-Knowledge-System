@@ -65,6 +65,36 @@ class ChatRepository:
         self.db.commit()
         return int(deleted or 0)
 
+    def get_message_for_user(self, *, message_id: int, user_id: str) -> ChatMessage | None:
+        return (
+            self.db.query(ChatMessage)
+            .filter(ChatMessage.id == message_id, ChatMessage.user_id == user_id)
+            .first()
+        )
+
+    def get_message_by_id(self, *, message_id: int) -> ChatMessage | None:
+        return self.db.query(ChatMessage).filter(ChatMessage.id == message_id).first()
+
+    def update_message(
+        self,
+        message: ChatMessage,
+        *,
+        content: str | None = None,
+        metadata: dict | None = None,
+        sources: list[dict] | None = None,
+    ) -> ChatMessage:
+        if content is not None:
+            message.content = content
+        if metadata is not None:
+            message.metadata_json = self._dump_json(metadata)
+        if sources is not None:
+            message.sources_json = self._dump_json(sources)
+
+        self.db.add(message)
+        self.db.commit()
+        self.db.refresh(message)
+        return message
+
     def serialize_message(self, message: ChatMessage) -> dict:
         sources = self._load_json(message.sources_json, [])
         normalized_sources = []
