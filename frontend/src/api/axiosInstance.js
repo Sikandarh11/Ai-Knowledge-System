@@ -9,8 +9,7 @@
 import axios from 'axios'
 
 // 🔌 BACKEND CONNECTION:
-// In local dev, default to localhost if env is missing.
-// In production, VITE_API_BASE_URL must be set in Vercel env vars.
+// Always load from VITE_API_BASE_URL only (single source of truth).
 const normalizeBaseUrl = (value) => {
   if (!value) return ''
 
@@ -26,10 +25,11 @@ const normalizeBaseUrl = (value) => {
 }
 
 const ENV_BASE_URL = normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL)
-const BASE_URL = ENV_BASE_URL || (import.meta.env.DEV ? 'http://localhost:8000' : '')
-
-if (import.meta.env.VITE_API_BASE_URL && !ENV_BASE_URL) {
-  console.error('Invalid VITE_API_BASE_URL. Example: http://127.0.0.1:8000')
+const BASE_URL = ENV_BASE_URL
+console.log(`🔌 API Base URL: ${BASE_URL || 'NOT SET'} (from VITE_API_BASE_URL)`)
+console.log(`⚠️  ${ENV_BASE_URL ? 'Using VITE_API_BASE_URL from env vars.' : 'No valid VITE_API_BASE_URL found.'}`)
+if (!ENV_BASE_URL) {
+  console.error('Invalid or missing VITE_API_BASE_URL. Example: https://backend-ai-knowledge-system-9jf3.vercel.app')
 }
 
 const axiosInstance = axios.create({
@@ -46,6 +46,10 @@ const axiosInstance = axios.create({
 // Good place to add auth tokens later
 axiosInstance.interceptors.request.use(
   (config) => {
+    if (!BASE_URL) {
+      return Promise.reject(new Error('VITE_API_BASE_URL is missing or invalid. Set it in frontend env files.'))
+    }
+
     const token = localStorage.getItem('access_token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`

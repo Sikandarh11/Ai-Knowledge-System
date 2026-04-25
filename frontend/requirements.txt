@@ -11,7 +11,7 @@ cd Agentic-AI-Personal-Knowledge-System/frontend
 npm install
 
 # 3. Create the .env file manually in frontend/ and add the following line to it (local dev):
-VITE_API_BASE_URL=http://localhost:8000
+VITE_API_BASE_URL=https://backend-ai-knowledge-system-9jf3.vercel.app/docs
 
 # For Vercel production, set VITE_API_BASE_URL in Vercel Environment Variables
 # to your deployed backend URL (example: https://your-backend-project.vercel.app)
