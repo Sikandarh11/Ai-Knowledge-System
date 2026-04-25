@@ -86,9 +86,11 @@ const DocumentsPage = () => {
   //    FormData: { file, workspace_id }
   const handleUpload = async (file) => {
     try {
-      const newDoc = await uploadDocument(Number(workspaceId), file)
-      // Add to list without refetching
-      setDocuments(prev => [newDoc, ...prev])
+      await uploadDocument(Number(workspaceId), file)
+      // Fetch the canonical document payload (includes extracted content)
+      // so preview works immediately after upload.
+      const refreshedDocuments = await getDocuments(Number(workspaceId))
+      setDocuments(refreshedDocuments)
       setWorkspace((prev) => {
         if (!prev) return prev
         const count = (prev.doc_count ?? 0) + 1
