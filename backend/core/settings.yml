@@ -5,7 +5,11 @@ app:
   database_url: sqlite:///./app.db
   cors_allow_origins:
     - http://localhost:5173
+    - http://localhost:5174
     - http://127.0.0.1:5173
+    - http://127.0.0.1:5174
+    - https://agentic-ai-personal-knowledge-syste.vercel.app
+    - https://agentic-ai-personal-knowledge-system.vercel.app
 
 auth:
   jwt_secret_key: change-this-in-production
