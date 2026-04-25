@@ -11,7 +11,26 @@ import axios from 'axios'
 // 🔌 BACKEND CONNECTION:
 // In local dev, default to localhost if env is missing.
 // In production, VITE_API_BASE_URL must be set in Vercel env vars.
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:8000' : '')
+const normalizeBaseUrl = (value) => {
+  if (!value) return ''
+
+  // Ignore accidental inline comments/spaces in .env values.
+  const firstToken = value.trim().split(/\s+/)[0]
+  const candidate = firstToken.replace(/\/+$/, '')
+
+  try {
+    return new URL(candidate).toString().replace(/\/$/, '')
+  } catch {
+    return ''
+  }
+}
+
+const ENV_BASE_URL = normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL)
+const BASE_URL = ENV_BASE_URL || (import.meta.env.DEV ? 'http://localhost:8000' : '')
+
+if (import.meta.env.VITE_API_BASE_URL && !ENV_BASE_URL) {
+  console.error('Invalid VITE_API_BASE_URL. Example: http://127.0.0.1:8000')
+}
 
 const axiosInstance = axios.create({
   baseURL: BASE_URL,
