@@ -3,6 +3,9 @@ app:
   version: 1.0.0
   debug: false
   database_url: sqlite:///./app.db
+  cors_allow_origins:
+    - http://localhost:5173
+    - http://127.0.0.1:5173
 
 auth:
   jwt_secret_key: change-this-in-production

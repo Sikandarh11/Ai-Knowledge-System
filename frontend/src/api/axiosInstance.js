@@ -9,10 +9,9 @@
 import axios from 'axios'
 
 // 🔌 BACKEND CONNECTION:
-// This reads VITE_API_BASE_URL from your .env file
-// Right now .env has: VITE_API_BASE_URL=http://localhost:8000
-// When your backend is running, this automatically points to it
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+// In local dev, default to localhost if env is missing.
+// In production, VITE_API_BASE_URL must be set in Vercel env vars.
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:8000' : '')
 
 const axiosInstance = axios.create({
   baseURL: BASE_URL,

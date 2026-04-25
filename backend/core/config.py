@@ -133,6 +133,23 @@ class Settings:
         )
         self.OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
         self.OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        self.CORS_ALLOW_ORIGINS: list[str] = _env_csv(
+            "CORS_ALLOW_ORIGINS",
+            _to_csv_list(
+                _get_nested(
+                    self._yaml,
+                    ["app", "cors_allow_origins"],
+                    [
+                        "http://localhost:5173",
+                        "http://127.0.0.1:5173",
+                    ],
+                ),
+                [
+                    "http://localhost:5173",
+                    "http://127.0.0.1:5173",
+                ],
+            ),
+        )
 
         # Storage / metadata backends
         self.STORAGE_PROVIDER: str = os.getenv("STORAGE_PROVIDER", "azure_blob")

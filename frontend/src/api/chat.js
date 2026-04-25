@@ -3,7 +3,7 @@
 
 import axiosInstance from './axiosInstance'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+const API_BASE_URL = axiosInstance.defaults.baseURL || ''
 
 const toUiRelevance = (distance) => {
   if (typeof distance !== 'number' || Number.isNaN(distance)) {
@@ -70,6 +70,10 @@ export const sendChatMessageStream = async (
   onChunk,
   options = {}
 ) => {
+  if (!API_BASE_URL) {
+    throw new Error('VITE_API_BASE_URL is not configured')
+  }
+
   const token = localStorage.getItem('access_token')
   const response = await fetch(`${API_BASE_URL}/chat/stream`, {
     method: 'POST',
