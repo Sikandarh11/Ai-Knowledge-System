@@ -16,24 +16,6 @@ const ChatPage = () => {
   const [searchParams] = useSearchParams()
   const [showWorkspaceMenu, setShowWorkspaceMenu] = useState(false)
   const [activeChatTarget, setActiveChatTarget] = useState(GLOBAL_CHAT_ID)
-  const [voicePrefill, setVoicePrefill] = useState({ text: '', nonce: 0 })
-
-  const streamTextToComposer = async (text) => {
-    const cleanText = (text || '').trim()
-    setVoicePrefill({ text: '', nonce: Date.now() })
-    if (!cleanText) {
-      return
-    }
-
-    let current = ''
-    for (const char of cleanText) {
-      current += char
-      setVoicePrefill({ text: current, nonce: Date.now() })
-      // Small typing effect so transcript appears progressively in composer.
-      // eslint-disable-next-line no-await-in-loop
-      await new Promise((resolve) => window.setTimeout(resolve, 10))
-    }
-  }
 
   // 🔌 BACKEND: workspaces from Context → GET /workspaces
   const {
@@ -87,20 +69,10 @@ const ChatPage = () => {
     messages,
     loading,
     send,
-    sendVoiceAudio,
     clear,
     getMessageCount,
     chatHistories,
   } = useChat(activeChatTarget, currentUser?.id)
-
-  const handleVoiceRecorded = async (audioBlob, options = {}) => {
-    setVoicePrefill({ text: '', nonce: Date.now() })
-
-    const result = await sendVoiceAudio(audioBlob, options)
-    if (result?.status === 'needs_review') {
-      await streamTextToComposer(result.transcript || '')
-    }
-  }
 
   if (workspacesLoading) {
     return (
@@ -248,9 +220,6 @@ const ChatPage = () => {
       <div className="flex-shrink-0">
         <ChatInput
           onSend={send}
-          onVoiceRecorded={handleVoiceRecorded}
-          prefillText={voicePrefill.text}
-          prefillNonce={voicePrefill.nonce}
           disabled={loading}
           placeholder={activeChatTarget === GLOBAL_CHAT_ID
             ? 'Ask about documents across all your workspaces...'

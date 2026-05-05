@@ -84,10 +84,7 @@ const ChatWindow = ({
 
       {/* ── Messages list ─────────────────────────── */}
       {safeMessages.map((message, index) => (
-        <ChatMessage
-          key={message?.id ?? `msg-${index}`}
-          message={message}
-        />
+        <ChatMessage key={message?.id ?? `msg-${index}`} message={message} />
       ))}
 
       {/* ── AI thinking indicator ─────────────────── */}
