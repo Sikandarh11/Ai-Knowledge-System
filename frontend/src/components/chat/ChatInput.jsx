@@ -7,16 +7,49 @@
 //
 // 🔌 BACKEND: onSend triggers POST /chat
 
-import { useState, useRef } from 'react'
-import { Send, Loader } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Loader, Mic, Send, Square } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 const ChatInput = ({
   onSend,      // function called with message string
+  onVoiceRecorded,
+  prefillText = '',
+  prefillNonce = 0,
   disabled,    // true while waiting for AI response
   placeholder = 'Ask anything about your documents...'
 }) => {
   const [message, setMessage] = useState('')
+  const [isRecording, setIsRecording] = useState(false)
+  const [isVoiceBusy, setIsVoiceBusy] = useState(false)
   const textareaRef = useRef(null)
+  const mediaRecorderRef = useRef(null)
+  const streamRef = useRef(null)
+  const chunksRef = useRef([])
+
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current?.state === 'recording') {
+        mediaRecorderRef.current.stop()
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop())
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!prefillText || typeof prefillText !== 'string') {
+      return
+    }
+
+    setMessage(prefillText)
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`
+      textareaRef.current.focus()
+    }
+  }, [prefillText, prefillNonce])
 
   // ─── Handle send ──────────────────────────────────
   const handleSend = () => {
@@ -48,6 +81,94 @@ const ChatInput = ({
     // Reset height then set to scrollHeight
     e.target.style.height = 'auto'
     e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`
+  }
+
+  const stopActiveStream = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop())
+      streamRef.current = null
+    }
+  }
+
+  const startRecording = async () => {
+    if (disabled || isVoiceBusy) {
+      return
+    }
+
+    if (!navigator?.mediaDevices?.getUserMedia || typeof window.MediaRecorder === 'undefined') {
+      toast.error('Voice recording is not supported in this browser')
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      streamRef.current = stream
+
+      const preferredType = window.MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : ''
+
+      const recorder = preferredType
+        ? new MediaRecorder(stream, { mimeType: preferredType })
+        : new MediaRecorder(stream)
+
+      chunksRef.current = []
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          chunksRef.current.push(event.data)
+        }
+      }
+
+      recorder.onstop = async () => {
+        try {
+          const blobType = recorder.mimeType || 'audio/webm'
+          const audioBlob = new Blob(chunksRef.current, { type: blobType })
+          chunksRef.current = []
+
+          if (audioBlob.size === 0) {
+            toast.error('No audio captured. Please try again.')
+            return
+          }
+
+          if (typeof onVoiceRecorded === 'function') {
+            const extension = blobType.includes('webm') ? 'webm' : 'wav'
+            await onVoiceRecorded(audioBlob, {
+              filename: `voice-message-${Date.now()}.${extension}`,
+            })
+          }
+        } catch {
+          toast.error('Failed to process recorded audio')
+        } finally {
+          stopActiveStream()
+          setIsVoiceBusy(false)
+        }
+      }
+
+      mediaRecorderRef.current = recorder
+      recorder.start()
+      setIsRecording(true)
+    } catch {
+      stopActiveStream()
+      toast.error('Microphone access denied or unavailable')
+    }
+  }
+
+  const stopRecording = () => {
+    if (!mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording') {
+      return
+    }
+    setIsRecording(false)
+    setIsVoiceBusy(true)
+    mediaRecorderRef.current.stop()
+  }
+
+  const handleVoiceToggle = async () => {
+    if (isRecording) {
+      stopRecording()
+      return
+    }
+    await startRecording()
   }
 
   return (
@@ -86,6 +207,30 @@ const ChatInput = ({
           style={{ maxHeight: '120px' }}
         />
       </div>
+
+      <button
+        onClick={handleVoiceToggle}
+        disabled={disabled || isVoiceBusy}
+        className={`
+          w-11 h-11 rounded-2xl flex-shrink-0
+          flex items-center justify-center
+          transition-all duration-200
+          ${isRecording
+            ? 'bg-red-500 hover:bg-red-600 text-white cursor-pointer'
+            : disabled || isVoiceBusy
+            ? 'bg-dark-600 border border-dark-500 text-slate-600 cursor-not-allowed'
+            : 'bg-dark-700 hover:border-neon-cyan border border-dark-500 text-neon-cyan cursor-pointer'
+          }
+        `}
+        title={isRecording ? 'Stop recording' : 'Record voice message'}
+      >
+        {isVoiceBusy
+          ? <Loader size={16} className="animate-spin text-neon-cyan" />
+          : isRecording
+          ? <Square size={16} />
+          : <Mic size={16} />
+        }
+      </button>
 
       {/* ── Send button ───────────────────────────── */}
       {/* 🔌 BACKEND: triggers POST /chat on click */}
