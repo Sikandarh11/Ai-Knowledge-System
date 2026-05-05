@@ -13,6 +13,7 @@
 //           Frontend is live
 //         </p>
 
+
 //         {/* Testing neon purple background */}
 //         {/* <div className="w-32 h-1 bg-neon-purple mx-auto rounded-full shadow-neon-md" /> */}
 
